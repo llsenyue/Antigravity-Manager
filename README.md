@@ -176,7 +176,7 @@ print(response.choices[0].message.content)
 
 *   **版本演进 (Changelog)**:
     *   **v3.3.2 (2025-12-29)**:
-        - **新增功能 (核心致谢 @llsenyue PR #128)**:
+        - **新增功能 (核心致谢 @XinXin622 PR #128)**:
             - **Claude 协议联网搜索引用支持**: 实现了将 Gemini 的 Google Search 原始识别结果映射为 Claude 原生的 `web_search_tool_result` 内容块。现在支持在 Cherry Studio 等兼容客户端中直接显示结构化的搜索引文及来源链接。
             - **Thinking 模式稳定性增强 (Global Signature Store v2)**: 引入了更强大的全局 `thoughtSignature` 存储机制。系统能够实时捕获流式响应中的最新签名，并自动为缺少签名的后续请求（特别是在会话恢复场景下）进行回填，显著减少了 `400 INVALID_ARGUMENT` 报错。
         - **优化与修复 (Optimizations & Bug Fixes)**:

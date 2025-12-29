@@ -160,7 +160,7 @@ print(response.choices[0].message.content)
 ## 📝 Developer & Community
 
     *   **v3.3.2 (2025-12-29)**:
-        - **New Features (Core Thanks to @llsenyue PR #128)**:
+        - **New Features (Core Thanks to @XinXin622 PR #128)**:
             - **Web Search Citation Support for Claude Protocol**: Successfully mapped Gemini's raw Google Search results to Claude's native `web_search_tool_result` content blocks. Structured search citations and source links now display correctly in compatible clients like Cherry Studio.
             - **Enhanced Thinking Mode Stability (Global Signature Store v2)**: Introduced a more robust global `thoughtSignature` storage mechanism. The system now captures real-time signatures from streaming responses and automatically backfills them for subsequent requests missing signatures, significantly reducing `400 INVALID_ARGUMENT` errors.
         - **Optimizations & Bug Fixes**:
