@@ -11,6 +11,7 @@ use crate::proxy::mappers::openai::{
 use crate::proxy::server::AppState;
 
 const MAX_RETRY_ATTEMPTS: usize = 3;
+use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_chat_completions(
     State(state): State<AppState>,
@@ -64,10 +65,13 @@ pub async fn handle_chat_completions(
             &tools_val,
         );
 
-        // 3. 获取 Token (使用准确的 request_type)
+        // 3. 提取 SessionId (粘性指纹)
+        let session_id = SessionManager::extract_openai_session_id(&openai_req);
+
+        // 4. 获取 Token (使用准确的 request_type)
         // 关键：在重试尝试 (attempt > 0) 时强制轮换账号
         let (access_token, project_id, email) = match token_manager
-            .get_token(&config.request_type, attempt > 0)
+            .get_token(&config.request_type, attempt > 0, Some(&session_id))
             .await
         {
             Ok(t) => t,
@@ -153,7 +157,8 @@ pub async fn handle_chat_completions(
 
         // 处理特定错误并重试
         let status_code = status.as_u16();
-        let error_text = response.text().await.unwrap_or_default();
+        let retry_after = response.headers().get("Retry-After").and_then(|h| h.to_str().ok()).map(|s| s.to_string());
+        let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status_code));
         last_error = format!("HTTP {}: {}", status_code, error_text);
 
         // [New] 打印错误报文日志
@@ -163,13 +168,18 @@ pub async fn handle_chat_completions(
             error_text
         );
 
-        // 429 智能处理
-        if status_code == 429 {
+        // 429/529/503 智能处理
+        if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
+            // 记录限流信息 (全局同步)
+            token_manager.mark_rate_limited(&email, status_code, retry_after.as_deref(), &error_text);
+
             // 1. 优先尝试解析 RetryInfo (由 Google Cloud 直接下发)
             if let Some(delay_ms) = crate::proxy::upstream::retry::parse_retry_delay(&error_text) {
                 let actual_delay = delay_ms.saturating_add(200).min(10_000);
                 tracing::warn!(
-                    "OpenAI Upstream 429 on attempt {}/{}, waiting {}ms then retrying",
+                    "OpenAI Upstream {} on {} attempt {}/{}, waiting {}ms then retrying",
+                    status_code,
+                    email,
                     attempt + 1,
                     max_attempts,
                     actual_delay
@@ -181,16 +191,19 @@ pub async fn handle_chat_completions(
             // 2. 只有明确包含 "QUOTA_EXHAUSTED" 才停止，避免误判频率提示 (如 "check quota")
             if error_text.contains("QUOTA_EXHAUSTED") {
                 error!(
-                    "OpenAI Quota exhausted (429) on attempt {}/{}, stopping to protect pool.",
+                    "OpenAI Quota exhausted (429) on account {} attempt {}/{}, stopping to protect pool.",
+                    email,
                     attempt + 1,
                     max_attempts
                 );
                 return Err((status, error_text));
             }
 
-            // 3. 其他 429 情况（如无重试指示的频率限制），轮换账号
+            // 3. 其他限流或服务器过载情况，轮换账号
             tracing::warn!(
-                "OpenAI Upstream 429 on attempt {}/{}, rotating account",
+                "OpenAI Upstream {} on {} attempt {}/{}, rotating account",
+                status_code,
+                email,
                 attempt + 1,
                 max_attempts
             );
@@ -200,8 +213,9 @@ pub async fn handle_chat_completions(
         // 只有 403 (权限/地区限制) 和 401 (认证失效) 触发账号轮换
         if status_code == 403 || status_code == 401 {
             tracing::warn!(
-                "OpenAI Upstream {} on attempt {}/{}, rotating account",
+                "OpenAI Upstream {} on account {} attempt {}/{}, rotating account",
                 status_code,
+                email,
                 attempt + 1,
                 max_attempts
             );
@@ -210,8 +224,8 @@ pub async fn handle_chat_completions(
 
         // 404 等由于模型配置或路径错误的 HTTP 异常，直接报错，不进行无效轮换
         error!(
-            "OpenAI Upstream non-retryable error {}: {}",
-            status_code, error_text
+            "OpenAI Upstream non-retryable error {} on account {}: {}",
+            status_code, email, error_text
         );
         return Err((status, error_text));
     }
@@ -527,7 +541,7 @@ pub async fn handle_completions(
         );
 
         let (access_token, project_id, email) =
-            match token_manager.get_token(&config.request_type, false).await {
+            match token_manager.get_token(&config.request_type, false, None).await {
                 Ok(t) => t,
                 Err(e) => {
                     return Err((
@@ -741,7 +755,7 @@ pub async fn handle_images_generations(
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
 
-    let (access_token, project_id, email) = match token_manager.get_token("image_gen", false).await
+    let (access_token, project_id, email) = match token_manager.get_token("image_gen", false, None).await
     {
         Ok(t) => t,
         Err(e) => {
@@ -991,7 +1005,7 @@ pub async fn handle_images_edits(
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
     // Fix: Proper get_token call with correct signature and unwrap (using image_gen quota)
-    let (access_token, project_id, _email) = match token_manager.get_token("image_gen", false).await
+    let (access_token, project_id, _email) = match token_manager.get_token("image_gen", false, None).await
     {
         Ok(t) => t,
         Err(e) => {

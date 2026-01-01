@@ -362,6 +362,27 @@
                 "url": "Proxy URL",
                 "url_placeholder": "e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:7890",
                 "tip": "Supports HTTP, HTTPS and SOCKS5."
+            },
+            "scheduling": {
+                "title": "Account Rotation & Scheduling",
+                "title_tooltip": "Controls how sessions are bound to accounts and how rate limits are handled.",
+                "subtitle": "Optimizes Prompt Caching and rate limit handling for all protocols (OpenAI/Gemini/Claude).",
+                "mode": "Scheduling Mode",
+                "mode_tooltip": "Cache-First: Bind session to account, wait on rate limit (maximize cache utility); Balance: Bind session, switch account on rate limit; Performance: Standard Round-robin.",
+                "modes": {
+                    "CacheFirst": "Cache First",
+                    "Balance": "Balance",
+                    "PerformanceFirst": "Performance"
+                },
+                "modes_desc": {
+                    "CacheFirst": "Binds session to account, waits precisely if limited (Maximizes Prompt Cache hits).",
+                    "Balance": "Binds session, auto-switches to available account if limited (Balanced cache & availability).",
+                    "PerformanceFirst": "No session binding, pure round-robin rotation (Best for high concurrency)."
+                },
+                "max_wait": "Max Wait (sec)",
+                "max_wait_tooltip": "Only used in 'Cache First' mode: wait instead of switching if the rate limit reset time is below this value.",
+                "clear_bindings": "Clear Session Bindings",
+                "clear_bindings_tooltip": "Hard reset all session-account bindings, forcing accounts to be re-assigned on next request."
             }
         },
         "example": {
@@ -471,15 +492,16 @@
             "action": "Action"
         }
     },
-            "monitor": {
-                "page_title": "API Monitor Dashboard",
-                "page_subtitle": "Real-time request logging and analysis",
-                "open_monitor": "Open Monitor",
-                "logging_status": {
-                    "active": "Recording",
-                    "paused": "Paused"
-                },
-                "stats": {            "total": "Total",
+    "monitor": {
+        "page_title": "API Monitor Dashboard",
+        "page_subtitle": "Real-time request logging and analysis",
+        "open_monitor": "Open Monitor",
+        "logging_status": {
+            "active": "Recording",
+            "paused": "Paused"
+        },
+        "stats": {
+            "total": "Total",
             "ok": "OK",
             "err": "ERR"
         },
@@ -497,20 +519,21 @@
         "table": {
             "status": "Status",
             "method": "Method",
-                            "model": "Model",
-                            "path": "Path",
-                            "usage": "Tokens",
-                            "duration": "Duration",
-                            "time": "Time",
-                            "empty": "No requests recorded"
-                        },
-                        "details": {
-                            "title": "Request Details",
-                            "request_payload": "Request Payload",
-                            "response_payload": "Response Payload",
-                            "duration": "Duration",
-                            "tokens": "Tokens (I/O)",
-                            "time": "Time",            "model": "Model",
+            "model": "Model",
+            "path": "Path",
+            "usage": "Tokens",
+            "duration": "Duration",
+            "time": "Time",
+            "empty": "No requests recorded"
+        },
+        "details": {
+            "title": "Request Details",
+            "request_payload": "Request Payload",
+            "response_payload": "Response Payload",
+            "duration": "Duration",
+            "tokens": "Tokens (I/O)",
+            "time": "Time",
+            "model": "Model",
             "id": "Request ID"
         },
         "dialog": {

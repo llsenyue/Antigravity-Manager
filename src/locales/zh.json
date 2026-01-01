@@ -363,6 +363,27 @@
                 "url": "代理地址",
                 "url_placeholder": "例如: http://127.0.0.1:7890 或 socks5://127.0.0.1:7890",
                 "tip": "支持 HTTP、HTTPS 和 SOCKS5 协议。"
+            },
+            "scheduling": {
+                "title": "账号轮换与会话调度",
+                "title_tooltip": "控制会话如何绑定到账号，以及触发限流时的行为。",
+                "subtitle": "针对全协议客户端优化 Prompt Caching 和限流处理 (OpenAI/Gemini/Claude)。",
+                "mode": "调度模式",
+                "mode_tooltip": "缓存优先：绑定账号，限流时强制等待（最大化缓存）；平衡：绑定账号，限流时自动热切；性能优先：不绑定，全自动轮换。",
+                "modes": {
+                    "CacheFirst": "缓存优先 (Cache First)",
+                    "Balance": "平衡轮换 (Balance)",
+                    "PerformanceFirst": "性能优先 (Performance)"
+                },
+                "modes_desc": {
+                    "CacheFirst": "绑定会话与账号，限流时精准等待（最大化 Prompt Cache 命中率）。",
+                    "Balance": "绑定会话，限流时自动热切换至可用账号（兼顾缓存与可用性）。",
+                    "PerformanceFirst": "无会话绑定，纯随机轮换（适合高并发，不考虑缓存）。"
+                },
+                "max_wait": "最大等待时长 (秒)",
+                "max_wait_tooltip": "仅在“缓存优先”模式下生效：如果账号限流重置时间小于此值，则原地等待而非切换账号。",
+                "clear_bindings": "清除会话绑定",
+                "clear_bindings_tooltip": "立即断开所有会话与账号的绑定关系，强制下一次请求重新分配账号。"
             }
         },
         "example": {
@@ -475,15 +496,16 @@
             "action": "操作"
         }
     },
-            "monitor": {
-                "page_title": "API 监控看板",
-                "page_subtitle": "实时请求日志与分析",
-                "open_monitor": "打开监控",
-                "logging_status": {
-                    "active": "正在录制",
-                    "paused": "已暂停"
-                },
-                "stats": {            "total": "总计",
+    "monitor": {
+        "page_title": "API 监控看板",
+        "page_subtitle": "实时请求日志与分析",
+        "open_monitor": "打开监控",
+        "logging_status": {
+            "active": "正在录制",
+            "paused": "已暂停"
+        },
+        "stats": {
+            "total": "总计",
             "ok": "正常",
             "err": "错误"
         },
@@ -501,20 +523,21 @@
         "table": {
             "status": "状态",
             "method": "方法",
-                            "model": "模型",
-                            "path": "路径",
-                            "usage": "Token 消耗",
-                            "duration": "耗时",
-                            "time": "时间",
-                            "empty": "暂无请求记录"
-                        },
-                        "details": {
-                            "title": "请求详情",
-                            "request_payload": "请求报文 (Request)",
-                            "response_payload": "响应报文 (Response)",
-                            "duration": "耗时",
-                            "tokens": "Token 消耗 (输入/输出)",
-                            "time": "请求时间",            "model": "使用模型",
+            "model": "模型",
+            "path": "路径",
+            "usage": "Token 消耗",
+            "duration": "耗时",
+            "time": "时间",
+            "empty": "暂无请求记录"
+        },
+        "details": {
+            "title": "请求详情",
+            "request_payload": "请求报文 (Request)",
+            "response_payload": "响应报文 (Response)",
+            "duration": "耗时",
+            "tokens": "Token 消耗 (输入/输出)",
+            "time": "请求时间",
+            "model": "使用模型",
             "id": "请求 ID"
         },
         "dialog": {

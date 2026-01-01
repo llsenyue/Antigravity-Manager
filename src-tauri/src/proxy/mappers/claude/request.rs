@@ -249,7 +249,17 @@ fn build_contents(
                             }
                             parts.push(part);
                         }
-                        ContentBlock::Image { source } => {
+                        ContentBlock::Image { source, .. } => {
+                            if source.source_type == "base64" {
+                                parts.push(json!({
+                                    "inlineData": {
+                                        "mimeType": source.media_type,
+                                        "data": source.data
+                                    }
+                                }));
+                            }
+                        }
+                        ContentBlock::Document { source, .. } => {
                             if source.source_type == "base64" {
                                 parts.push(json!({
                                     "inlineData": {

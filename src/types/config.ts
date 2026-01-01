@@ -17,6 +17,14 @@ export interface ProxyConfig {
     enable_logging: boolean;
     upstream_proxy: UpstreamProxyConfig;
     zai?: ZaiConfig;
+    scheduling?: StickySessionConfig;
+}
+
+export type SchedulingMode = 'CacheFirst' | 'Balance' | 'PerformanceFirst';
+
+export interface StickySessionConfig {
+    mode: SchedulingMode;
+    max_wait_seconds: number;
 }
 
 export type ZaiDispatchMode = 'off' | 'exclusive' | 'pooled' | 'fallback';

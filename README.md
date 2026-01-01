@@ -1,5 +1,5 @@
 # Antigravity Tools 🚀
-> 专业的 AI 账号管理与协议反代系统 (v3.3.8)
+> 专业的 AI 账号管理与协议反代系统 (v3.3.9)
 <div align="center">
   <img src="public/icon.png" alt="Antigravity Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
 
@@ -8,7 +8,7 @@
   
   <p>
     <a href="https://github.com/lbjlaq/Antigravity-Manager">
-      <img src="https://img.shields.io/badge/Version-3.3.8-blue?style=flat-square" alt="Version">
+      <img src="https://img.shields.io/badge/Version-3.3.9-blue?style=flat-square" alt="Version">
     </a>
     <img src="https://img.shields.io/badge/Tauri-v2-orange?style=flat-square" alt="Tauri">
     <img src="https://img.shields.io/badge/Backend-Rust-red?style=flat-square" alt="Rust">
@@ -107,7 +107,7 @@ brew tap lbjlaq/antigravity-manager https://github.com/lbjlaq/Antigravity-Manage
 brew install --cask antigravity-tools
 ```
 # 如果遇到权限问题，建议使用 --no-quarantine
-brew install --cask --no-quarantine antigravity
+brew install --cask --no-quarantine antigravity-tools
 ```
 
 ### 选项 B: 手动下载
@@ -129,7 +129,7 @@ brew install --cask --no-quarantine antigravity
 2.  **Homebrew 安装技巧**:
     如果您使用 brew 安装，可以添加 `--no-quarantine` 参数来规避此问题：
     ```bash
-    brew install --cask --no-quarantine antigravity
+    brew install --cask --no-quarantine antigravity-tools
     ```
 
 ## 🔌 快速接入示例
@@ -177,6 +177,13 @@ print(response.choices[0].message.content)
 ## 📝 开发者与社区
 
 *   **版本演进 (Changelog)**:
+    *   **v3.3.9 (2026-01-01)**:
+        - 🚀 **全协议调度对齐**: `Scheduling Mode` 现在正式覆盖 OpenAI (Cursor/Cherry)、Gemini 原生及 Claude 协议。
+        - 🧠 **工业级 Session 指纹**: 升级 SHA256 内容哈希算法生成粘性 Session ID，确保 CLI 重启后仍能完美继承同一账号，极大提升 Prompt Caching 命中率。
+        - 🛡️ **精准限流与 5xx 故障避让**: 深度集成 Google API JSON 报文解析，支持毫秒级 `quotaResetDelay` 提取，并在 500/503/529 故障时自动触发 20s 避让隔离，实现平滑热切换。
+        - 🔀 **智能调度算法升级**: `TokenManager` 轮转时主动避开所有限流或隔离账号；全量限流时精准提示最短重置时间。
+        - 🌐 **全局限流同步**: 引入跨协议限流追踪器，任意协议触发限流均会实时同步至全局账号池，实现“一端限流，全局避让”。
+        - 📄 **Claude 多模态补全**: 修复 Claude CLI 传输 PDF 等文档时的 400 错误，补全多模态映射逻辑。
     *   **v3.3.8 (2025-12-31)**:
         - **代理监控模块 (核心致谢 @84hero PR #212)**:
             - **实时请求追踪**: 全新的监控仪表板，实时可视化查看所有反代流量，包括请求路径、状态码、响应时间、Token消耗等详细信息。

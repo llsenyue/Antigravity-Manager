@@ -83,7 +83,18 @@ pub enum ContentBlock {
     },
 
     #[serde(rename = "image")]
-    Image { source: ImageSource },
+    Image {
+        source: ImageSource,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<serde_json::Value>,
+    },
+
+    #[serde(rename = "document")]
+    Document {
+        source: DocumentSource,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<serde_json::Value>,
+    },
 
     #[serde(rename = "tool_use")]
     ToolUse {
@@ -127,6 +138,14 @@ pub struct ImageSource {
     pub source_type: String,
     pub media_type: String,
     pub data: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentSource {
+    #[serde(rename = "type")]
+    pub source_type: String, // "base64"
+    pub media_type: String,  // e.g. "application/pdf"
+    pub data: String,        // base64 data
 }
 
 /// Tool - supports both client tools (with input_schema) and server tools (like web_search)

@@ -24,7 +24,7 @@ import {
     Layers,
     Activity
 } from 'lucide-react';
-import { AppConfig, ProxyConfig } from '../types/config';
+import { AppConfig, ProxyConfig, StickySessionConfig } from '../types/config';
 import HelpTooltip from '../components/common/HelpTooltip';
 
 interface ProxyStatus {
@@ -303,6 +303,23 @@ export default function ApiProxy() {
         }
     };
 
+    // 一键添加 Haiku 优化映射
+    const handleAddHaikuOptimization = async () => {
+        const originalModel = 'claude-haiku-4-5-20251001';
+        const targetModel = 'gemini-2.5-flash-lite';
+
+        // 调用现有的 handleMappingUpdate 函数
+        await handleMappingUpdate('custom', originalModel, targetModel);
+
+        // 滚动到自定义映射列表 (可选,提升 UX)
+        setTimeout(() => {
+            const customListElement = document.querySelector('[data-custom-mapping-list]');
+            if (customListElement) {
+                customListElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }, 100);
+    };
+
     const handleRemoveCustomMapping = async (key: string) => {
         if (!appConfig || !appConfig.proxy.custom_mapping) return;
         const newCustom = { ...appConfig.proxy.custom_mapping };
@@ -326,6 +343,31 @@ export default function ApiProxy() {
             }
         };
         saveConfig(newConfig);
+    };
+
+    const updateSchedulingConfig = (updates: Partial<StickySessionConfig>) => {
+        if (!appConfig) return;
+        const currentScheduling = appConfig.proxy.scheduling || { mode: 'Balance', max_wait_seconds: 60 };
+        const newScheduling = { ...currentScheduling, ...updates };
+
+        const newAppConfig = {
+            ...appConfig,
+            proxy: {
+                ...appConfig.proxy,
+                scheduling: newScheduling
+            }
+        };
+        saveConfig(newAppConfig);
+    };
+
+    const handleClearSessionBindings = async () => {
+        try {
+            await invoke('clear_proxy_session_bindings');
+            alert(t('common.success'));
+        } catch (error) {
+            console.error('Failed to clear session bindings:', error);
+            alert('Error: ' + error);
+        }
     };
 
     const refreshZaiModels = async () => {
@@ -1063,6 +1105,96 @@ print(response.text)`;
                                     )}
                                 </div>
                             </CollapsibleCard>
+
+                            {/* Account Scheduling & Rotation */}
+                            <CollapsibleCard
+                                title={t('proxy.config.scheduling.title')}
+                                icon={<RefreshCw size={18} className="text-indigo-500" />}
+                            >
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-xs font-medium text-gray-700 dark:text-gray-300 inline-flex items-center gap-1">
+                                                    {t('proxy.config.scheduling.mode')}
+                                                    <HelpTooltip text={t('proxy.config.scheduling.mode_tooltip')} />
+                                                </label>
+                                                <button
+                                                    onClick={handleClearSessionBindings}
+                                                    className="text-[10px] text-indigo-500 hover:text-indigo-600 transition-colors flex items-center gap-1"
+                                                >
+                                                    <Trash2 size={12} />
+                                                    {t('proxy.config.scheduling.clear_bindings')}
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-1 gap-2">
+                                                {(['CacheFirst', 'Balance', 'PerformanceFirst'] as const).map(mode => (
+                                                    <label
+                                                        key={mode}
+                                                        className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${(appConfig.proxy.scheduling?.mode || 'Balance') === mode
+                                                            ? 'border-indigo-500 bg-indigo-50/30 dark:bg-indigo-900/10'
+                                                            : 'border-gray-100 dark:border-base-200 hover:border-indigo-200'
+                                                            }`}
+                                                    >
+                                                        <input
+                                                            type="radio"
+                                                            className="radio radio-xs radio-primary mt-1"
+                                                            checked={(appConfig.proxy.scheduling?.mode || 'Balance') === mode}
+                                                            onChange={() => updateSchedulingConfig({ mode })}
+                                                        />
+                                                        <div className="space-y-1">
+                                                            <div className="text-xs font-bold text-gray-900 dark:text-base-content">
+                                                                {t(`proxy.config.scheduling.modes.${mode}`)}
+                                                            </div>
+                                                            <div className="text-[10px] text-gray-500 line-clamp-2">
+                                                                {t(`proxy.config.scheduling.modes_desc.${mode}`, {
+                                                                    defaultValue: mode === 'CacheFirst' ? 'Binds session to account, waits precisely if limited (Maximizes Prompt Cache hits).' :
+                                                                        mode === 'Balance' ? 'Binds session, auto-switches to available account if limited (Balanced cache & availability).' :
+                                                                            'No session binding, pure round-robin rotation (Best for high concurrency).'
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4 pt-1">
+                                            <div className="bg-gray-50 dark:bg-base-200/50 rounded-xl p-4 border border-gray-100 dark:border-base-200">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300 inline-flex items-center gap-1">
+                                                        {t('proxy.config.scheduling.max_wait')}
+                                                        <HelpTooltip text={t('proxy.config.scheduling.max_wait_tooltip')} />
+                                                    </label>
+                                                    <span className="text-xs font-mono text-indigo-600 font-bold">
+                                                        {appConfig.proxy.scheduling?.max_wait_seconds || 60}s
+                                                    </span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min="0"
+                                                    max="300"
+                                                    step="10"
+                                                    disabled={(appConfig.proxy.scheduling?.mode || 'Balance') !== 'CacheFirst'}
+                                                    className="range range-indigo range-xs"
+                                                    value={appConfig.proxy.scheduling?.max_wait_seconds || 60}
+                                                    onChange={(e) => updateSchedulingConfig({ max_wait_seconds: parseInt(e.target.value) })}
+                                                />
+                                                <div className="flex justify-between px-1 mt-1 text-[10px] text-gray-400 font-mono">
+                                                    <span>0s</span>
+                                                    <span>300s</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20 rounded-xl">
+                                                <p className="text-[10px] text-amber-700 dark:text-amber-500 leading-relaxed">
+                                                    <strong>{t('common.info')}:</strong> {t('proxy.config.scheduling.subtitle')}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </CollapsibleCard>
                         </div>
                     )
                 }
@@ -1253,10 +1385,30 @@ print(response.text)`;
 
                                 {/* 精确映射管理 */}
                                 <div className="pt-4 border-t border-gray-100 dark:border-base-200">
-                                    <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center justify-between mb-3">
                                         <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
                                             <ArrowRight size={14} /> {t('proxy.router.expert_title')}
                                         </h3>
+                                    </div>
+
+                                    {/* 💡 Haiku 优化提示 */}
+                                    <div className="mb-4 p-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-800/30">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2 flex-1">
+                                                <Sparkles size={14} className="text-blue-500 flex-shrink-0" />
+                                                <p className="text-[11px] text-gray-600 dark:text-gray-400">
+                                                    <span className="font-medium text-blue-600 dark:text-blue-400">💰 省钱提示:</span>
+                                                    {' '}Claude CLI 默认使用 <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-[10px] font-mono">claude-haiku-4-5-20251001</code> 处理后台任务,建议映射到廉价 Flash 模型可节省约 95% 成本
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={handleAddHaikuOptimization}
+                                                className="btn btn-ghost btn-xs gap-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-800 whitespace-nowrap flex-shrink-0"
+                                            >
+                                                <Plus size={12} />
+                                                一键优化
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="flex flex-col lg:flex-row gap-6">
                                         {/* 添加映射表单 */}
@@ -1302,7 +1454,7 @@ print(response.text)`;
                                                     {t('proxy.router.current_list')}
                                                 </span>
                                             </div>
-                                            <div className="flex-1 overflow-y-auto max-h-[140px] border border-gray-100 dark:border-base-200 rounded-lg bg-gray-50/30 dark:bg-base-200/30">
+                                            <div className="flex-1 overflow-y-auto max-h-[140px] border border-gray-100 dark:border-base-200 rounded-lg bg-gray-50/30 dark:bg-base-200/30" data-custom-mapping-list>
                                                 <table className="table table-xs w-full bg-white dark:bg-base-100">
                                                     <thead className="sticky top-0 bg-gray-50/95 dark:bg-base-200/95 backdrop-blur shadow-sm z-10 text-gray-500 dark:text-gray-400">
                                                         <tr>
