@@ -169,15 +169,13 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[36px] text-right font-bold transition-colors",
+                                <span className={cn("w-[44px] text-right font-bold transition-colors",
                                     getQuotaColor(geminiProModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiProModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                )}>
+                                )} title={geminiProModel && geminiProModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
+                                    {geminiProModel && geminiProModel.percentage < 100 && '❄️'}
                                     {geminiProModel ? `${geminiProModel.percentage}%` : '-'}
                                 </span>
-                                {geminiProModel && geminiProModel.percentage < 100 && (
-                                    <Snowflake className="w-3 h-3 text-cyan-400 animate-pulse ml-0.5" title="冷却中，需要预热" />
-                                )}
                             </div>
                         </div>
 
@@ -201,15 +199,13 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[36px] text-right font-bold transition-colors",
+                                <span className={cn("w-[44px] text-right font-bold transition-colors",
                                     getQuotaColor(geminiFlashModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiFlashModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                )}>
+                                )} title={geminiFlashModel && geminiFlashModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
+                                    {geminiFlashModel && geminiFlashModel.percentage < 100 && '❄️'}
                                     {geminiFlashModel ? `${geminiFlashModel.percentage}%` : '-'}
                                 </span>
-                                {geminiFlashModel && geminiFlashModel.percentage < 100 && (
-                                    <Snowflake className="w-3 h-3 text-cyan-400 animate-pulse ml-0.5" title="冷却中，需要预热" />
-                                )}
                             </div>
                         </div>
 
@@ -233,15 +229,13 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[36px] text-right font-bold transition-colors",
+                                <span className={cn("w-[44px] text-right font-bold transition-colors",
                                     getQuotaColor(geminiImageModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiImageModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                )}>
+                                )} title={geminiImageModel && geminiImageModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
+                                    {geminiImageModel && geminiImageModel.percentage < 100 && '❄️'}
                                     {geminiImageModel ? `${geminiImageModel.percentage}%` : '-'}
                                 </span>
-                                {geminiImageModel && geminiImageModel.percentage < 100 && (
-                                    <Snowflake className="w-3 h-3 text-cyan-400 animate-pulse ml-0.5" title="冷却中，需要预热" />
-                                )}
                             </div>
                         </div>
 
@@ -265,15 +259,13 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[36px] text-right font-bold transition-colors",
+                                <span className={cn("w-[44px] text-right font-bold transition-colors",
                                     getQuotaColor(claudeModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(claudeModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                )}>
+                                )} title={claudeModel && claudeModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
+                                    {claudeModel && claudeModel.percentage < 100 && '❄️'}
                                     {claudeModel ? `${claudeModel.percentage}%` : '-'}
                                 </span>
-                                {claudeModel && claudeModel.percentage < 100 && (
-                                    <Snowflake className="w-3 h-3 text-cyan-400 animate-pulse ml-0.5" title="冷却中，需要预热" />
-                                )}
                             </div>
                         </div>
                     </div>
