@@ -92,6 +92,7 @@ pub fn run() {
             commands::add_account,
             commands::delete_account,
             commands::delete_accounts,
+            commands::reorder_accounts,
             commands::switch_account,
             commands::get_current_account,
             // 配额命令
@@ -116,7 +117,9 @@ pub fn run() {
             commands::get_data_dir_path,
             commands::show_main_window,
             commands::get_antigravity_path,
+            commands::get_antigravity_args,
             commands::check_for_updates,
+            commands::toggle_proxy_status,
             // 反代服务命令
             commands::proxy::start_proxy_service,
             commands::proxy::stop_proxy_service,
@@ -129,6 +132,9 @@ pub fn run() {
             commands::proxy::reload_proxy_accounts,
             commands::proxy::update_model_mapping,
             commands::proxy::fetch_zai_models,
+            commands::proxy::get_proxy_scheduling_config,
+            commands::proxy::update_proxy_scheduling_config,
+            commands::proxy::clear_proxy_session_bindings,
             // Autostart 命令
             commands::autostart::toggle_auto_launch,
             commands::autostart::is_auto_launch_enabled,

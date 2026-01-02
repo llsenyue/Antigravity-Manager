@@ -89,19 +89,23 @@ fn parse_image_config(model_name: &str) -> (Value, String) {
     let mut aspect_ratio = "1:1";
     let _image_size = "1024x1024"; // Default, not explicitly sent unless 4k/hd
 
-    if model_name.contains("-16x9") || model_name.contains("-16-9") { aspect_ratio = "16:9"; }
+    if model_name.contains("-21x9") || model_name.contains("-21-9") { aspect_ratio = "21:9"; }
+    else if model_name.contains("-16x9") || model_name.contains("-16-9") { aspect_ratio = "16:9"; }
     else if model_name.contains("-9x16") || model_name.contains("-9-16") { aspect_ratio = "9:16"; }
     else if model_name.contains("-4x3") || model_name.contains("-4-3") { aspect_ratio = "4:3"; }
     else if model_name.contains("-3x4") || model_name.contains("-3-4") { aspect_ratio = "3:4"; }
     else if model_name.contains("-1x1") || model_name.contains("-1-1") { aspect_ratio = "1:1"; }
 
     let is_hd = model_name.contains("-4k") || model_name.contains("-hd");
+    let is_2k = model_name.contains("-2k");
 
     let mut config = serde_json::Map::new();
     config.insert("aspectRatio".to_string(), json!(aspect_ratio));
     
     if is_hd {
         config.insert("imageSize".to_string(), json!("4K"));
+    } else if is_2k {
+        config.insert("imageSize".to_string(), json!("2K"));
     }
 
     // The upstream model must be EXACTLY "gemini-3-pro-image"
@@ -120,7 +124,7 @@ pub fn inject_google_search_tool(body: &mut Value) {
             });
 
             if has_functions {
-                tracing::info!("Skipping googleSearch injection due to existing functionDeclarations");
+                tracing::debug!("Skipping googleSearch injection due to existing functionDeclarations");
                 return;
             }
 
@@ -261,10 +265,10 @@ mod tests {
 
     #[test]
     fn test_high_quality_model_auto_grounding() {
+        // Auto-grounding is currently disabled by default due to conflict with image gen
         let config = resolve_request_config("gpt-4o", "gemini-2.5-flash", &None);
-        assert_eq!(config.request_type, "web_search");
-        assert!(config.inject_google_search);
-        assert_eq!(config.final_model, "gemini-2.5-flash"); // 修正断言: final_model = mapped_model
+        assert_eq!(config.request_type, "agent");
+        assert!(!config.inject_google_search);
     }
 
     #[test]
@@ -297,5 +301,26 @@ mod tests {
         let config = resolve_request_config("gemini-3-pro-image", "gemini-3-pro-image", &None);
         assert_eq!(config.request_type, "image_gen");
         assert!(!config.inject_google_search);
+    }
+
+    #[test]
+    fn test_image_2k_and_ultrawide_config() {
+        // Test 2K
+        let (config_2k, _) = parse_image_config("gemini-3-pro-image-2k");
+        assert_eq!(config_2k["imageSize"], "2K");
+
+        // Test 21:9
+        let (config_21x9, _) = parse_image_config("gemini-3-pro-image-21x9");
+        assert_eq!(config_21x9["aspectRatio"], "21:9");
+
+        // Test Combined (if logic allows, though suffix parsing is greedy)
+         let (config_combined, _) = parse_image_config("gemini-3-pro-image-2k-21x9");
+         assert_eq!(config_combined["imageSize"], "2K");
+         assert_eq!(config_combined["aspectRatio"], "21:9");
+
+         // Test 4K + 21:9
+         let (config_4k_wide, _) = parse_image_config("gemini-3-pro-image-4k-21x9");
+         assert_eq!(config_4k_wide["imageSize"], "4K");
+         assert_eq!(config_4k_wide["aspectRatio"], "21:9");
     }
 }

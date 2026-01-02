@@ -173,6 +173,10 @@ pub struct ProxyConfig {
     /// z.ai provider configuration (Anthropic-compatible).
     #[serde(default)]
     pub zai: ZaiConfig,
+    
+    /// 账号调度配置 (粘性会话/限流重试)
+    #[serde(default)]
+    pub scheduling: crate::proxy::sticky_config::StickySessionConfig,
 }
 
 /// 上游代理配置
@@ -200,6 +204,7 @@ impl Default for ProxyConfig {
             enable_logging: false, // 默认关闭，节省性能
             upstream_proxy: UpstreamProxyConfig::default(),
             zai: ZaiConfig::default(),
+            scheduling: crate::proxy::sticky_config::StickySessionConfig::default(),
         }
     }
 }

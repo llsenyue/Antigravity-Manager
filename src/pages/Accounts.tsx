@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { request as invoke } from '../utils/request';
 import { join } from '@tauri-apps/api/path';
-import { Search, RefreshCw, Download, Trash2, LayoutGrid, List, Zap } from 'lucide-react';
+import { Search, RefreshCw, Download, Trash2, LayoutGrid, List, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useAccountStore } from '../stores/useAccountStore';
 import { useConfigStore } from '../stores/useConfigStore';
 import AccountTable from '../components/accounts/AccountTable';
@@ -15,7 +15,7 @@ import { showToast } from '../components/common/ToastContainer';
 import { Account } from '../types/account';
 import { cn } from '../utils/cn';
 
-type FilterType = 'all' | 'available' | 'low' | 'pro' | 'ultra' | 'free';
+type FilterType = 'all' | 'pro' | 'ultra' | 'free';
 type ViewMode = 'list' | 'grid';
 
 import { useTranslation } from 'react-i18next';
@@ -32,7 +32,8 @@ function Accounts() {
         switchAccount,
         loading,
         refreshQuota,
-        warmUpAccounts,
+        toggleProxyStatus,
+        reorderAccounts,
     } = useAccountStore();
     const { config } = useConfigStore();
 
@@ -43,6 +44,8 @@ function Accounts() {
     const [detailsAccount, setDetailsAccount] = useState<Account | null>(null);
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [isBatchDelete, setIsBatchDelete] = useState(false);
+    const [toggleProxyConfirm, setToggleProxyConfirm] = useState<{ accountId: string; enable: boolean } | null>(null);
+
 
     const containerRef = useRef<HTMLDivElement>(null);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -120,12 +123,6 @@ function Accounts() {
     const filterCounts = useMemo(() => {
         return {
             all: searchedAccounts.length,
-            available: searchedAccounts.filter(a => !a.disabled && !a.quota?.is_forbidden).length,
-            low: searchedAccounts.filter(a =>
-                a.disabled ||
-                (a.quota?.is_forbidden) ||
-                (a.quota?.models.some(m => m.percentage < 10))
-            ).length,
             pro: searchedAccounts.filter(a => a.quota?.subscription_tier?.toLowerCase().includes('pro')).length,
             ultra: searchedAccounts.filter(a => a.quota?.subscription_tier?.toLowerCase().includes('ultra')).length,
             free: searchedAccounts.filter(a => {
@@ -139,15 +136,7 @@ function Accounts() {
     const filteredAccounts = useMemo(() => {
         let result = searchedAccounts;
 
-        if (filter === 'available') {
-            result = result.filter(a => !a.disabled && !a.quota?.is_forbidden);
-        } else if (filter === 'low') {
-            result = result.filter(a =>
-                a.disabled ||
-                (a.quota?.is_forbidden) ||
-                (a.quota?.models.some(m => m.percentage < 10))
-            );
-        } else if (filter === 'pro') {
+        if (filter === 'pro') {
             result = result.filter(a => a.quota?.subscription_tier?.toLowerCase().includes('pro'));
         } else if (filter === 'ultra') {
             result = result.filter(a => a.quota?.subscription_tier?.toLowerCase().includes('ultra'));
@@ -289,31 +278,55 @@ function Accounts() {
         }
     };
 
+    const handleToggleProxy = (accountId: string, currentlyDisabled: boolean) => {
+        setToggleProxyConfirm({ accountId, enable: currentlyDisabled });
+    };
+
+    const executeToggleProxy = async () => {
+        if (!toggleProxyConfirm) return;
+
+        try {
+            await toggleProxyStatus(
+                toggleProxyConfirm.accountId,
+                toggleProxyConfirm.enable,
+                toggleProxyConfirm.enable ? undefined : '用户手动禁用'
+            );
+            showToast(t('common.success'), 'success');
+        } catch (error) {
+            console.error('[Accounts] Toggle proxy status failed:', error);
+            showToast(`${t('common.error')}: ${error}`, 'error');
+        } finally {
+            setToggleProxyConfirm(null);
+        }
+    };
+
+    const handleBatchToggleProxy = async (enable: boolean) => {
+        if (selectedIds.size === 0) return;
+
+        try {
+            const promises = Array.from(selectedIds).map(id =>
+                toggleProxyStatus(id, enable, enable ? undefined : '批量禁用')
+            );
+            await Promise.all(promises);
+            showToast(
+                enable
+                    ? `成功启用 ${selectedIds.size} 个账号的反代功能`
+                    : `成功禁用 ${selectedIds.size} 个账号的反代功能`,
+                'success'
+            );
+            setSelectedIds(new Set());
+        } catch (error) {
+            console.error('[Accounts] Batch toggle proxy status failed:', error);
+            showToast(`${t('common.error')}: ${error}`, 'error');
+        }
+    };
+
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
     const [isRefreshConfirmOpen, setIsRefreshConfirmOpen] = useState(false);
-    const [isWarmupConfirmOpen, setIsWarmupConfirmOpen] = useState(false);
-    const [isWarming, setIsWarming] = useState(false);
 
     const handleRefreshClick = () => {
         setIsRefreshConfirmOpen(true);
-    };
-
-    const handleWarmupClick = () => {
-        setIsWarmupConfirmOpen(true);
-    };
-
-    const executeWarmup = async () => {
-        setIsWarmupConfirmOpen(false);
-        setIsWarming(true);
-        try {
-            await warmUpAccounts();
-            showToast(t('accounts.warmup_started'), 'success');
-        } catch (error) {
-            showToast(`${t('common.error')}: ${error}`, 'error');
-        } finally {
-            setIsWarming(false);
-        }
     };
 
     const executeRefresh = async () => {
@@ -504,46 +517,6 @@ function Accounts() {
                         </span>
                     </button>
 
-                    <button
-                        className={cn(
-                            "px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0",
-                            filter === 'available'
-                                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content hover:bg-white/40"
-                        )}
-                        onClick={() => setFilter('available')}
-                    >
-                        {t('accounts.available')}
-                        <span className={cn(
-                            "px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors",
-                            filter === 'available'
-                                ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400"
-                                : "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                        )}>
-                            {filterCounts.available}
-                        </span>
-                    </button>
-
-                    <button
-                        className={cn(
-                            "px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0",
-                            filter === 'low'
-                                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content hover:bg-white/40"
-                        )}
-                        onClick={() => setFilter('low')}
-                    >
-                        {t('accounts.low_quota')}
-                        <span className={cn(
-                            "px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors",
-                            filter === 'low'
-                                ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400"
-                                : "bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                        )}>
-                            {filterCounts.low}
-                        </span>
-                    </button>
-
                     <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 self-center mx-1 shrink-0"></div>
 
                     <button
@@ -614,25 +587,33 @@ function Accounts() {
                     <AddAccountDialog onAdd={handleAddAccount} />
 
                     {selectedIds.size > 0 && (
-                        <button
-                            className="px-2.5 py-2 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-600 transition-colors flex items-center gap-1.5 shadow-sm"
-                            onClick={handleBatchDelete}
-                            title={t('accounts.delete_selected', { count: selectedIds.size })}
-                        >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span className="hidden xl:inline">{t('accounts.delete_selected', { count: selectedIds.size })}</span>
-                        </button>
+                        <>
+                            <button
+                                className="px-2.5 py-2 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-600 transition-colors flex items-center gap-1.5 shadow-sm"
+                                onClick={handleBatchDelete}
+                                title={t('accounts.delete_selected', { count: selectedIds.size })}
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span className="hidden xl:inline">{t('accounts.delete_selected', { count: selectedIds.size })}</span>
+                            </button>
+                            <button
+                                className="px-2.5 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1.5 shadow-sm"
+                                onClick={() => handleBatchToggleProxy(false)}
+                                title={`批量禁用 (${selectedIds.size})`}
+                            >
+                                <ToggleLeft className="w-3.5 h-3.5" />
+                                <span className="hidden xl:inline">禁用 ({selectedIds.size})</span>
+                            </button>
+                            <button
+                                className="px-2.5 py-2 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1.5 shadow-sm"
+                                onClick={() => handleBatchToggleProxy(true)}
+                                title={`批量启用 (${selectedIds.size})`}
+                            >
+                                <ToggleRight className="w-3.5 h-3.5" />
+                                <span className="hidden xl:inline">启用 ({selectedIds.size})</span>
+                            </button>
+                        </>
                     )}
-
-                    <button
-                        className={`px-2.5 py-2 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 transition-colors flex items-center gap-1.5 shadow-sm ${isWarming ? 'opacity-70 cursor-not-allowed' : ''}`}
-                        onClick={handleWarmupClick}
-                        disabled={isWarming}
-                        title={t('accounts.warm_up_desc')}
-                    >
-                        <Zap className={`w-3.5 h-3.5 ${isWarming ? 'animate-pulse' : ''}`} />
-                        <span className="hidden xl:inline">{isWarming ? t('common.loading') : t('accounts.warm_up')}</span>
-                    </button>
 
                     <button
                         className={`px-2.5 py-2 bg-blue-500 text-white text-xs font-medium rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-sm ${isRefreshing ? 'opacity-70 cursor-not-allowed' : ''}`}
@@ -677,6 +658,8 @@ function Accounts() {
                                 onViewDetails={handleViewDetails}
                                 onExport={handleExportOne}
                                 onDelete={handleDelete}
+                                onToggleProxy={(id) => handleToggleProxy(id, !!accounts.find(a => a.id === id)?.proxy_disabled)}
+                                onReorder={reorderAccounts}
                             />
                         </div>
                     </div>
@@ -694,6 +677,7 @@ function Accounts() {
                             onViewDetails={handleViewDetails}
                             onExport={handleExportOne}
                             onDelete={handleDelete}
+                            onToggleProxy={(id) => handleToggleProxy(id, !!accounts.find(a => a.id === id)?.proxy_disabled)}
                         />
                     </div>
                 )}
@@ -752,16 +736,15 @@ function Accounts() {
                 onCancel={() => setIsRefreshConfirmOpen(false)}
             />
 
-            <ModalDialog
-                isOpen={isWarmupConfirmOpen}
-                title={t('accounts.dialog.warmup_title')}
-                message={t('accounts.dialog.warmup_msg')}
-                type="confirm"
-                confirmText={t('accounts.warm_up')}
-                isDestructive={false}
-                onConfirm={executeWarmup}
-                onCancel={() => setIsWarmupConfirmOpen(false)}
-            />
+            {toggleProxyConfirm && (
+                <ModalDialog
+                    isOpen={!!toggleProxyConfirm}
+                    onCancel={() => setToggleProxyConfirm(null)}
+                    onConfirm={executeToggleProxy}
+                    title={toggleProxyConfirm.enable ? t('accounts.dialog.enable_proxy_title') : t('accounts.dialog.disable_proxy_title')}
+                    message={toggleProxyConfirm.enable ? t('accounts.dialog.enable_proxy_msg') : t('accounts.dialog.disable_proxy_msg')}
+                />
+            )}
         </div >
     );
 }

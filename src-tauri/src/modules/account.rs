@@ -323,6 +323,40 @@ pub fn delete_accounts(account_ids: &[String]) -> Result<(), String> {
     save_account_index(&index)
 }
 
+/// 重新排序账号列表
+/// 根据传入的账号ID顺序更新索引文件中的账号排列顺序
+pub fn reorder_accounts(account_ids: &[String]) -> Result<(), String> {
+    let _lock = ACCOUNT_INDEX_LOCK.lock().map_err(|e| format!("获取锁失败: {}", e))?;
+    let mut index = load_account_index()?;
+    
+    // 创建一个映射，记录每个账号ID对应的摘要信息
+    let id_to_summary: std::collections::HashMap<_, _> = index.accounts
+        .iter()
+        .map(|s| (s.id.clone(), s.clone()))
+        .collect();
+    
+    // 按照新顺序重建账号列表
+    let mut new_accounts = Vec::new();
+    for id in account_ids {
+        if let Some(summary) = id_to_summary.get(id) {
+            new_accounts.push(summary.clone());
+        }
+    }
+    
+    // 添加未在新顺序中出现的账号（保持原有顺序追加到末尾）
+    for summary in &index.accounts {
+        if !account_ids.contains(&summary.id) {
+            new_accounts.push(summary.clone());
+        }
+    }
+    
+    index.accounts = new_accounts;
+    
+    crate::modules::logger::log_info(&format!("账号顺序已更新，共 {} 个账号", index.accounts.len()));
+    
+    save_account_index(&index)
+}
+
 /// 切换当前账号
 pub async fn switch_account(account_id: &str) -> Result<(), String> {
     use crate::modules::{oauth, process, db};

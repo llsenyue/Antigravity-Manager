@@ -274,6 +274,8 @@ impl NonStreamingProcessor {
             .unwrap_or(Usage {
                 input_tokens: 0,
                 output_tokens: 0,
+                cache_read_input_tokens: None,
+                cache_creation_input_tokens: None,
                 server_tool_use: None,
             });
 
@@ -325,6 +327,7 @@ mod tests {
                 prompt_token_count: Some(10),
                 candidates_token_count: Some(5),
                 total_token_count: Some(15),
+                cached_content_token_count: None,
             }),
             model_version: Some("gemini-2.5-pro".to_string()),
             response_id: Some("resp_123".to_string()),

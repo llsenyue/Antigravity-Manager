@@ -74,6 +74,8 @@ pub async fn start_proxy_service(
     let accounts_dir = app_data_dir.clone();
     
     let token_manager = Arc::new(TokenManager::new(accounts_dir));
+    // 同步 UI 传递的调度配置
+    token_manager.update_sticky_config(config.scheduling.clone()).await;
     
     // 3. 加载账号
     let active_accounts = token_manager.load_accounts().await
@@ -262,7 +264,7 @@ pub async fn update_model_mapping(
     // 后续可以根据需要让 resolve_model_route 直接读取全量 config)
     if let Some(instance) = instance_lock.as_ref() {
         instance.axum_server.update_mapping(&config).await;
-        tracing::info!("后端服务已接收全量模型映射配置");
+        tracing::debug!("后端服务已接收全量模型映射配置");
     }
     
     // 2. 无论是否运行，都保存到全局配置持久化
@@ -384,5 +386,47 @@ pub async fn fetch_zai_models(
     models.sort();
     models.dedup();
     Ok(models)
+}
+
+/// 获取当前调度配置
+#[tauri::command]
+pub async fn get_proxy_scheduling_config(
+    state: State<'_, ProxyServiceState>,
+) -> Result<crate::proxy::sticky_config::StickySessionConfig, String> {
+    let instance_lock = state.instance.read().await;
+    if let Some(instance) = instance_lock.as_ref() {
+        Ok(instance.token_manager.get_sticky_config().await)
+    } else {
+        Ok(crate::proxy::sticky_config::StickySessionConfig::default())
+    }
+}
+
+/// 更新调度配置
+#[tauri::command]
+pub async fn update_proxy_scheduling_config(
+    state: State<'_, ProxyServiceState>,
+    config: crate::proxy::sticky_config::StickySessionConfig,
+) -> Result<(), String> {
+    let instance_lock = state.instance.read().await;
+    if let Some(instance) = instance_lock.as_ref() {
+        instance.token_manager.update_sticky_config(config).await;
+        Ok(())
+    } else {
+        Err("服务未运行，无法更新实时配置".to_string())
+    }
+}
+
+/// 清除所有会话粘性绑定
+#[tauri::command]
+pub async fn clear_proxy_session_bindings(
+    state: State<'_, ProxyServiceState>,
+) -> Result<(), String> {
+    let instance_lock = state.instance.read().await;
+    if let Some(instance) = instance_lock.as_ref() {
+        instance.token_manager.clear_all_sessions();
+        Ok(())
+    } else {
+        Err("服务未运行".to_string())
+    }
 }
 

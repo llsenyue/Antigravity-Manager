@@ -13,9 +13,11 @@ interface AccountGridProps {
     onViewDetails: (accountId: string) => void;
     onExport: (accountId: string) => void;
     onDelete: (accountId: string) => void;
+    onToggleProxy: (accountId: string) => void;
 }
 
-function AccountGrid({ accounts, selectedIds, refreshingIds, onToggleSelect, currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDetails, onExport, onDelete }: AccountGridProps) {
+
+function AccountGrid({ accounts, selectedIds, refreshingIds, onToggleSelect, currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy }: AccountGridProps) {
     if (accounts.length === 0) {
         return (
             <div className="bg-white dark:bg-base-100 rounded-2xl p-12 shadow-sm border border-gray-100 dark:border-base-200 text-center">
@@ -41,6 +43,7 @@ function AccountGrid({ accounts, selectedIds, refreshingIds, onToggleSelect, cur
                     onViewDetails={() => onViewDetails(account.id)}
                     onExport={() => onExport(account.id)}
                     onDelete={() => onDelete(account.id)}
+                    onToggleProxy={() => onToggleProxy(account.id)}
                 />
             ))}
         </div>

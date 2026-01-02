@@ -54,7 +54,10 @@ pub fn transform_claude_request_in(
         .map(|t| t.type_ == "enabled")
         .unwrap_or(false);
 
-    let allow_dummy_thought = is_thinking_enabled;
+    // [CRITICAL FIX] Disable dummy thought injection for Vertex AI
+    // Vertex AI rejects thinking blocks without valid signatures
+    // Even if thinking is enabled, we should NOT inject dummy blocks for historical messages
+    let allow_dummy_thought = false; // was: is_thinking_enabled
 
     // 4. Generation Config & Thinking
     let generation_config = build_generation_config(claude_req, has_web_search_tool);
@@ -236,6 +239,7 @@ fn build_contents(
                             }
                         }
                         ContentBlock::Thinking { thinking, signature, .. } => {
+                            tracing::error!("[DEBUG-TRANSFORM] Processing thinking block. Sig: {:?}", signature);
                             let mut part = json!({
                                 "text": thinking,
                                 "thought": true, // [CRITICAL FIX] Vertex AI v1internal requires thought: true to distinguish from text
@@ -243,13 +247,29 @@ fn build_contents(
                             // [New] 递归清理黑名单字段（如 cache_control）
                             crate::proxy::common::json_schema::clean_json_schema(&mut part);
 
+                            // [CRITICAL FIX] Do NOT add skip_thought_signature_validator for Vertex AI
+                            // If no signature, the block should have been filtered out
+                            if signature.is_none() {
+                                tracing::warn!("[Claude-Request] Thinking block without signature (should have been filtered!)");
+                            }
+
                             if let Some(sig) = signature {
                                 last_thought_signature = Some(sig.clone());
                                 part["thoughtSignature"] = json!(sig);
                             }
                             parts.push(part);
                         }
-                        ContentBlock::Image { source } => {
+                        ContentBlock::Image { source, .. } => {
+                            if source.source_type == "base64" {
+                                parts.push(json!({
+                                    "inlineData": {
+                                        "mimeType": source.media_type,
+                                        "data": source.data
+                                    }
+                                }));
+                            }
+                        }
+                        ContentBlock::Document { source, .. } => {
                             if source.source_type == "base64" {
                                 parts.push(json!({
                                     "inlineData": {
@@ -275,6 +295,8 @@ fn build_contents(
                             tool_id_to_name.insert(id.clone(), name.clone());
 
                             // Signature resolution logic (Priority: Client -> Context -> Global Store)
+                            // [CRITICAL FIX] Do NOT use skip_thought_signature_validator for Vertex AI
+                            // Vertex AI rejects this sentinel value, so we only add thoughtSignature if we have a real one
                             let final_sig = signature.as_ref()
                                 .or(last_thought_signature.as_ref())
                                 .cloned()
@@ -286,6 +308,8 @@ fn build_contents(
                                     }
                                     global_sig
                                 });
+                            // Only add thoughtSignature if we have a valid one
+                            // Do NOT add skip_thought_signature_validator - Vertex AI rejects it
 
                             if let Some(sig) = final_sig {
                                 part["thoughtSignature"] = json!(sig);
@@ -402,7 +426,7 @@ fn build_contents(
                             "thought": true
                         }),
                     );
-                    tracing::warn!("First part of model message at {} is not a valid thought block. Prepending dummy.", contents.len());
+                    tracing::debug!("First part of model message at {} is not a valid thought block. Prepending dummy.", contents.len());
                 } else {
                     // 确保首项包含了 thought: true (防止只有 signature 的情况)
                     if let Some(p0) = parts.get_mut(0) {

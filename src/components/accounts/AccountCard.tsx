@@ -1,4 +1,4 @@
-import { ArrowRightLeft, RefreshCw, Trash2, Download, Info, Lock, Ban, Diamond, Gem, Circle, Clock, Snowflake } from 'lucide-react';
+import { ArrowRightLeft, RefreshCw, Trash2, Download, Info, Lock, Ban, Diamond, Gem, Circle, Clock, ToggleLeft, ToggleRight } from 'lucide-react';
 import { Account } from '../../types/account';
 import { getQuotaColor, formatTimeRemaining, getTimeRemainingColor } from '../../utils/format';
 import { cn } from '../../utils/cn';
@@ -16,9 +16,11 @@ interface AccountCardProps {
     onViewDetails: () => void;
     onExport: () => void;
     onDelete: () => void;
+    onToggleProxy: () => void;
 }
 
-function AccountCard({ account, selected, onSelect, isCurrent, isRefreshing, isSwitching = false, onSwitch, onRefresh, onViewDetails, onExport, onDelete }: AccountCardProps) {
+
+function AccountCard({ account, selected, onSelect, isCurrent, isRefreshing, isSwitching = false, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy }: AccountCardProps) {
     const { t } = useTranslation();
     const geminiProModel = account.quota?.models.find(m => m.name === 'gemini-3-pro-high');
     const geminiFlashModel = account.quota?.models.find(m => m.name === 'gemini-3-flash');
@@ -118,24 +120,6 @@ function AccountCard({ account, selected, onSelect, isCurrent, isRefreshing, isS
                                     );
                                 }
                             })()}
-                            {/* 冷却中徽章 - 当任何模型有reset_time时显示 */}
-                            {(() => {
-                                const hasActiveCooldown = [geminiProModel, geminiFlashModel, geminiImageModel, claudeModel].some(
-                                    m => m && m.reset_time && m.percentage < 100
-                                );
-                                if (hasActiveCooldown) {
-                                    return (
-                                        <span
-                                            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 text-[9px] font-bold shadow-sm border border-cyan-200/50 animate-pulse"
-                                            title={t('accounts.cooling_tooltip')}
-                                        >
-                                            <Clock className="w-2.5 h-2.5" />
-                                            {t('accounts.cooling').toUpperCase()}
-                                        </span>
-                                    );
-                                }
-                                return null;
-                            })()}
                         </div>
                     </div>
                 </div>
@@ -171,11 +155,10 @@ function AccountCard({ account, selected, onSelect, isCurrent, isRefreshing, isS
                                             <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                         )}
                                     </div>
-                                    <span className={cn("w-[30px] text-right font-bold transition-colors shrink-0 flex items-center justify-end gap-0.5",
+                                    <span className={cn("w-[30px] text-right font-bold transition-colors shrink-0",
                                         getQuotaColor(geminiProModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                             getQuotaColor(geminiProModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                     )}>
-                                        {geminiProModel && geminiProModel.percentage < 100 && <Snowflake className="w-2 h-2 text-blue-400 animate-pulse" />}
                                         {(geminiProModel?.percentage || 0)}%
                                     </span>
                                 </div>
@@ -201,11 +184,10 @@ function AccountCard({ account, selected, onSelect, isCurrent, isRefreshing, isS
                                             <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                         )}
                                     </div>
-                                    <span className={cn("w-[30px] text-right font-bold transition-colors shrink-0 flex items-center justify-end gap-0.5",
+                                    <span className={cn("w-[30px] text-right font-bold transition-colors shrink-0",
                                         getQuotaColor(geminiFlashModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                             getQuotaColor(geminiFlashModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                     )}>
-                                        {geminiFlashModel && geminiFlashModel.percentage < 100 && <Snowflake className="w-2 h-2 text-blue-400 animate-pulse" />}
                                         {(geminiFlashModel?.percentage || 0)}%
                                     </span>
                                 </div>
@@ -231,11 +213,10 @@ function AccountCard({ account, selected, onSelect, isCurrent, isRefreshing, isS
                                             <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                         )}
                                     </div>
-                                    <span className={cn("w-[30px] text-right font-bold transition-colors shrink-0 flex items-center justify-end gap-0.5",
+                                    <span className={cn("w-[30px] text-right font-bold transition-colors shrink-0",
                                         getQuotaColor(geminiImageModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                             getQuotaColor(geminiImageModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                     )}>
-                                        {geminiImageModel && geminiImageModel.percentage < 100 && <Snowflake className="w-2 h-2 text-blue-400 animate-pulse" />}
                                         {(geminiImageModel?.percentage || 0)}%
                                     </span>
                                 </div>
@@ -261,11 +242,10 @@ function AccountCard({ account, selected, onSelect, isCurrent, isRefreshing, isS
                                             <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                         )}
                                     </div>
-                                    <span className={cn("w-[30px] text-right font-bold transition-colors shrink-0 flex items-center justify-end gap-0.5",
+                                    <span className={cn("w-[30px] text-right font-bold transition-colors shrink-0",
                                         getQuotaColor(claudeModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                             getQuotaColor(claudeModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                     )}>
-                                        {claudeModel && claudeModel.percentage < 100 && <Snowflake className="w-2 h-2 text-blue-400 animate-pulse" />}
                                         {(claudeModel?.percentage || 0)}%
                                     </span>
                                 </div>
@@ -313,6 +293,22 @@ function AccountCard({ account, selected, onSelect, isCurrent, isRefreshing, isS
                         title={t('common.export')}
                     >
                         <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        className={cn(
+                            "p-1.5 rounded-lg transition-all",
+                            account.proxy_disabled
+                                ? "text-gray-400 hover:text-green-600 hover:bg-green-50"
+                                : "text-gray-400 hover:text-orange-600 hover:bg-orange-50"
+                        )}
+                        onClick={(e) => { e.stopPropagation(); onToggleProxy(); }}
+                        title={account.proxy_disabled ? t('accounts.enable_proxy') : t('accounts.disable_proxy')}
+                    >
+                        {account.proxy_disabled ? (
+                            <ToggleRight className="w-3.5 h-3.5" />
+                        ) : (
+                            <ToggleLeft className="w-3.5 h-3.5" />
+                        )}
                     </button>
                     <button
                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"

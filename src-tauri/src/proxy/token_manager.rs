@@ -5,6 +5,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use crate::proxy::rate_limit::RateLimitTracker;
+use crate::proxy::sticky_config::StickySessionConfig;
+
 #[derive(Debug, Clone)]
 pub struct ProxyToken {
     pub account_id: String,
@@ -23,6 +26,9 @@ pub struct TokenManager {
     current_index: Arc<AtomicUsize>,
     last_used_account: Arc<tokio::sync::Mutex<Option<(String, std::time::Instant)>>>,
     data_dir: PathBuf,
+    rate_limit_tracker: Arc<RateLimitTracker>,  // 新增: 限流跟踪器
+    sticky_config: Arc<tokio::sync::RwLock<StickySessionConfig>>, // 新增：调度配置
+    session_accounts: Arc<DashMap<String, String>>, // 新增：会话与账号映射 (SessionID -> AccountID)
 }
 
 impl TokenManager {
@@ -33,6 +39,9 @@ impl TokenManager {
             current_index: Arc::new(AtomicUsize::new(0)),
             last_used_account: Arc::new(tokio::sync::Mutex::new(None)),
             data_dir,
+            rate_limit_tracker: Arc::new(RateLimitTracker::new()),
+            sticky_config: Arc::new(tokio::sync::RwLock::new(StickySessionConfig::default())),
+            session_accounts: Arc::new(DashMap::new()),
         }
     }
     
@@ -76,7 +85,7 @@ impl TokenManager {
                     // 跳过无效账号
                 },
                 Err(e) => {
-                    tracing::warn!("加载账号失败 {:?}: {}", path, e);
+                    tracing::debug!("加载账号失败 {:?}: {}", path, e);
                 }
             }
         }
@@ -97,8 +106,22 @@ impl TokenManager {
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
         {
-            tracing::warn!(
+            tracing::debug!(
                 "Skipping disabled account file: {:?} (email={})",
+                path,
+                account.get("email").and_then(|v| v.as_str()).unwrap_or("<unknown>")
+            );
+            return Ok(None);
+        }
+
+        // 检查主动禁用状态
+        if account
+            .get("proxy_disabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            tracing::debug!(
+                "Skipping proxy-disabled account file: {:?} (email={})",
                 path,
                 account.get("email").and_then(|v| v.as_str()).unwrap_or("<unknown>")
             );
@@ -154,10 +177,11 @@ impl TokenManager {
         }))
     }
     
-    /// 获取当前可用的 Token（带 60s 时间窗口锁定机制）
-    /// 参数 `_quota_group` 用于区分 "claude" vs "gemini" 组
+    /// 获取当前可用的 Token（支持粘性会话与智能调度）
+    /// 参数 `quota_group` 用于区分 "claude" vs "gemini" 组
     /// 参数 `force_rotate` 为 true 时将忽略锁定，强制切换账号
-    pub async fn get_token(&self, quota_group: &str, force_rotate: bool) -> Result<(String, String, String), String> {
+    /// 参数 `session_id` 用于跨请求维持会话粘性
+    pub async fn get_token(&self, quota_group: &str, force_rotate: bool, session_id: Option<&str>) -> Result<(String, String, String), String> {
         let mut tokens_snapshot: Vec<ProxyToken> = self.tokens.iter().map(|e| e.value().clone()).collect();
         let total = tokens_snapshot.len();
         if total == 0 {
@@ -176,30 +200,68 @@ impl TokenManager {
             tier_priority(&a.subscription_tier).cmp(&tier_priority(&b.subscription_tier))
         });
 
+        // 0. 读取当前调度配置
+        let scheduling = self.sticky_config.read().await.clone();
+        use crate::proxy::sticky_config::SchedulingMode;
+
         let mut attempted: HashSet<String> = HashSet::new();
         let mut last_error: Option<String> = None;
 
         for attempt in 0..total {
             let rotate = force_rotate || attempt > 0;
 
-            // ===== 【优化】原子化锁定检查与选择 =====
+            // ===== 【核心】粘性会话与智能调度逻辑 =====
             let mut target_token: Option<ProxyToken> = None;
             
-            if !rotate && quota_group != "image_gen" {
-                // 在锁内一站式完成：1. 检查锁定 2. 选择新账号 3. 更新锁定
+            // 模式 A: 粘性会话处理 (CacheFirst 或 Balance 且有 session_id)
+            if !rotate && session_id.is_some() && scheduling.mode != SchedulingMode::PerformanceFirst {
+                let sid = session_id.unwrap();
+                
+                // 1. 检查会话是否已绑定账号
+                if let Some(bound_id) = self.session_accounts.get(sid).map(|v| v.clone()) {
+                    // 2. 检查绑定的账号是否限流 (使用精准的剩余时间接口)
+                    let reset_sec = self.rate_limit_tracker.get_remaining_wait(&bound_id);
+                    if reset_sec > 0 {
+                        if scheduling.mode == SchedulingMode::CacheFirst && reset_sec <= scheduling.max_wait_seconds {
+                            // 缓存优先模式：限流时间短，执行精准精准避让等待
+                            tracing::warn!("Cache-first: Session {} bound to {} is limited. Executing precise wait for {}s to preserve cache...", sid, bound_id, reset_sec);
+                            tokio::time::sleep(std::time::Duration::from_secs(reset_sec)).await;
+                            
+                            // 等待后若账号可用，优先复用
+                            if let Some(found) = tokens_snapshot.iter().find(|t| t.account_id == bound_id) {
+                                tracing::debug!("Sticky Session: Successfully recovered and reusing bound account {} for session {}", found.email, sid);
+                                target_token = Some(found.clone());
+                            }
+                        } else {
+                            // 平衡模式或等待时间过长：断开绑定，准备换号
+                            tracing::warn!("Avoidance/WaitTimeout: Session {} switching from {} (remaining wait: {}s > limit: {}s).", sid, bound_id, reset_sec, scheduling.max_wait_seconds);
+                            self.session_accounts.remove(sid);
+                        }
+                    } else if !attempted.contains(&bound_id) {
+                        // 3. 账号可用且未被标记为尝试失败，优先复用
+                        if let Some(found) = tokens_snapshot.iter().find(|t| t.account_id == bound_id) {
+                            tracing::debug!("Sticky Session: Successfully reusing bound account {} for session {}", found.email, sid);
+                            target_token = Some(found.clone());
+                        }
+                    }
+                }
+            }
+
+            // 模式 B: 原子化 60s 全局锁定 (针对无 session_id 情况的默认保护)
+            if target_token.is_none() && !rotate && quota_group != "image_gen" {
                 let mut last_used = self.last_used_account.lock().await;
                 
-                // A. 尝试复用锁定账号
+                // 尝试复用全局锁定账号
                 if let Some((account_id, last_time)) = &*last_used {
                     if last_time.elapsed().as_secs() < 60 && !attempted.contains(account_id) {
                         if let Some(found) = tokens_snapshot.iter().find(|t| &t.account_id == account_id) {
-                            tracing::info!("60s 时间窗口内，强制复用上一个账号: {}", found.email);
+                            tracing::debug!("60s Window: Force reusing last account: {}", found.email);
                             target_token = Some(found.clone());
                         }
                     }
                 }
                 
-                // B. 若无锁定，则轮询选择新账号并立即建立锁定
+                // 若无锁定，则轮询选择新账号
                 if target_token.is_none() {
                     let start_idx = self.current_index.fetch_add(1, Ordering::SeqCst) % total;
                     for offset in 0..total {
@@ -208,16 +270,27 @@ impl TokenManager {
                         if attempted.contains(&candidate.account_id) {
                             continue;
                         }
+
+                        // 【新增】主动避开限流或 5xx 锁定的账号 (来自 PR #28 的高可用思路)
+                        if self.is_rate_limited(&candidate.account_id) {
+                            continue;
+                        }
+
                         target_token = Some(candidate.clone());
-                        // 【关键】在锁内立即更新，确保后续并发请求能看到
                         *last_used = Some((candidate.account_id.clone(), std::time::Instant::now()));
-                        tracing::info!("切换到新账号并建立 60s 锁定: {}", candidate.email);
+                        
+                        // 如果是会话首次分配且需要粘性，在此建立绑定
+                        if let Some(sid) = session_id {
+                            if scheduling.mode != SchedulingMode::PerformanceFirst {
+                                self.session_accounts.insert(sid.to_string(), candidate.account_id.clone());
+                                tracing::debug!("Sticky Session: Bound new account {} to session {}", candidate.email, sid);
+                            }
+                        }
                         break;
                     }
                 }
-                // 锁在此处自动释放
-            } else {
-                // 画图请求或强制轮换，不使用 session 锁定
+            } else if target_token.is_none() {
+                // 模式 C: 纯轮询模式 (Round-robin) 或强制轮换
                 let start_idx = self.current_index.fetch_add(1, Ordering::SeqCst) % total;
                 for offset in 0..total {
                     let idx = (start_idx + offset) % total;
@@ -225,29 +298,44 @@ impl TokenManager {
                     if attempted.contains(&candidate.account_id) {
                         continue;
                     }
+
+                    // 【新增】主动避开限流或 5xx 锁定的账号
+                    if self.is_rate_limited(&candidate.account_id) {
+                        continue;
+                    }
+
                     target_token = Some(candidate.clone());
                     
                     if rotate {
-                        tracing::info!("强制切换到账号: {}", candidate.email);
+                        tracing::debug!("Force Rotation: Switched to account: {}", candidate.email);
                     }
                     break;
                 }
             }
             
-            let mut token = target_token.ok_or_else(|| {
-                last_error.clone().unwrap_or_else(|| "All accounts exhausted".to_string())
-            })?;
+            let mut token = match target_token {
+                Some(t) => t,
+                None => {
+                    // 如果所有账号都被尝试过或都处于限流中，计算最短等待时间
+                    let min_wait = tokens_snapshot.iter()
+                        .filter_map(|t| self.rate_limit_tracker.get_reset_seconds(&t.account_id))
+                        .min()
+                        .unwrap_or(60);
+                    
+                    return Err(format!("All accounts are currently limited or unhealthy. Please wait {}s.", min_wait));
+                }
+            };
 
         
             // 3. 检查 token 是否过期（提前5分钟刷新）
             let now = chrono::Utc::now().timestamp();
             if now >= token.timestamp - 300 {
-                tracing::info!("账号 {} 的 token 即将过期，正在刷新...", token.email);
+                tracing::debug!("账号 {} 的 token 即将过期，正在刷新...", token.email);
 
                 // 调用 OAuth 刷新 token
                 match crate::modules::oauth::refresh_access_token(&token.refresh_token).await {
                     Ok(token_response) => {
-                        tracing::info!("Token 刷新成功！");
+                        tracing::debug!("Token 刷新成功！");
 
                         // 更新本地内存对象供后续使用
                         token.access_token = token_response.access_token.clone();
@@ -263,7 +351,7 @@ impl TokenManager {
 
                         // 同步落盘（避免重启后继续使用过期 timestamp 导致频繁刷新）
                         if let Err(e) = self.save_refreshed_token(&token.account_id, &token_response).await {
-                            tracing::warn!("保存刷新后的 token 失败 ({}): {}", token.email, e);
+                            tracing::debug!("保存刷新后的 token 失败 ({}): {}", token.email, e);
                         }
                     }
                     Err(e) => {
@@ -298,7 +386,7 @@ impl TokenManager {
             let project_id = if let Some(pid) = &token.project_id {
                 pid.clone()
             } else {
-                tracing::info!("账号 {} 缺少 project_id，尝试获取...", token.email);
+                tracing::debug!("账号 {} 缺少 project_id，尝试获取...", token.email);
                 match crate::proxy::project_resolver::fetch_project_id(&token.access_token).await {
                     Ok(pid) => {
                         if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
@@ -371,7 +459,7 @@ impl TokenManager {
         std::fs::write(path, serde_json::to_string_pretty(&content).unwrap())
             .map_err(|e| format!("写入文件失败: {}", e))?;
         
-        tracing::info!("已保存 project_id 到账号 {}", account_id);
+        tracing::debug!("已保存 project_id 到账号 {}", account_id);
         Ok(())
     }
     
@@ -395,12 +483,78 @@ impl TokenManager {
         std::fs::write(path, serde_json::to_string_pretty(&content).unwrap())
             .map_err(|e| format!("写入文件失败: {}", e))?;
         
-        tracing::info!("已保存刷新后的 token 到账号 {}", account_id);
+        tracing::debug!("已保存刷新后的 token 到账号 {}", account_id);
         Ok(())
     }
     
     pub fn len(&self) -> usize {
         self.tokens.len()
+    }
+    
+    // ===== 限流管理方法 =====
+    
+    /// 标记账号限流(从外部调用,通常在 handler 中)
+    pub fn mark_rate_limited(
+        &self,
+        account_id: &str,
+        status: u16,
+        retry_after_header: Option<&str>,
+        error_body: &str,
+    ) {
+        self.rate_limit_tracker.parse_from_error(
+            account_id,
+            status,
+            retry_after_header,
+            error_body,
+        );
+    }
+    
+    /// 检查账号是否在限流中
+    pub fn is_rate_limited(&self, account_id: &str) -> bool {
+        self.rate_limit_tracker.is_rate_limited(account_id)
+    }
+    
+    /// 获取距离限流重置还有多少秒
+    #[allow(dead_code)]
+    pub fn get_rate_limit_reset_seconds(&self, account_id: &str) -> Option<u64> {
+        self.rate_limit_tracker.get_reset_seconds(account_id)
+    }
+    
+    /// 清除过期的限流记录
+    #[allow(dead_code)]
+    pub fn cleanup_expired_rate_limits(&self) -> usize {
+        self.rate_limit_tracker.cleanup_expired()
+    }
+    
+    /// 清除指定账号的限流记录
+    #[allow(dead_code)]
+    pub fn clear_rate_limit(&self, account_id: &str) -> bool {
+        self.rate_limit_tracker.clear(account_id)
+    }
+
+    // ===== 调度配置相关方法 =====
+
+    /// 获取当前调度配置
+    pub async fn get_sticky_config(&self) -> StickySessionConfig {
+        self.sticky_config.read().await.clone()
+    }
+
+    /// 更新调度配置
+    pub async fn update_sticky_config(&self, new_config: StickySessionConfig) {
+        let mut config = self.sticky_config.write().await;
+        *config = new_config;
+        tracing::debug!("Scheduling configuration updated: {:?}", *config);
+    }
+
+    /// 清除特定会话的粘性映射
+    #[allow(dead_code)]
+    pub fn clear_session_binding(&self, session_id: &str) {
+        self.session_accounts.remove(session_id);
+    }
+
+    /// 清除所有会话的粘性映射
+    pub fn clear_all_sessions(&self) {
+        self.session_accounts.clear();
     }
 }
 

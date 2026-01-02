@@ -17,6 +17,7 @@ interface AccountState {
     switchAccount: (accountId: string) => Promise<void>;
     refreshQuota: (accountId: string) => Promise<void>;
     refreshAllQuotas: () => Promise<accountService.RefreshStats>;
+    reorderAccounts: (accountIds: string[]) => Promise<void>;
 
     // 新增 actions
     startOAuthLogin: () => Promise<void>;
@@ -26,7 +27,7 @@ interface AccountState {
     importFromDb: () => Promise<void>;
     importFromCustomDb: (path: string) => Promise<void>;
     syncAccountFromDb: () => Promise<void>;
-    warmUpAccounts: () => Promise<string>;
+    toggleProxyStatus: (accountId: string, enable: boolean, reason?: string) => Promise<void>;
 }
 
 export const useAccountStore = create<AccountState>((set, get) => ({
@@ -136,6 +137,38 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         }
     },
 
+    /**
+     * 重新排序账号列表
+     * 采用乐观更新策略：先更新本地状态再调用后端持久化，以提供流畅的拖拽体验
+     */
+    reorderAccounts: async (accountIds: string[]) => {
+        const { accounts } = get();
+
+        // 创建 ID 到账号的映射
+        const accountMap = new Map(accounts.map(acc => [acc.id, acc]));
+
+        // 按新顺序重建账号数组
+        const reorderedAccounts = accountIds
+            .map(id => accountMap.get(id))
+            .filter((acc): acc is Account => acc !== undefined);
+
+        // 添加未在新顺序中的账号（保持原有顺序）
+        const remainingAccounts = accounts.filter(acc => !accountIds.includes(acc.id));
+        const finalAccounts = [...reorderedAccounts, ...remainingAccounts];
+
+        // 乐观更新本地状态
+        set({ accounts: finalAccounts });
+
+        try {
+            await accountService.reorderAccounts(accountIds);
+        } catch (error) {
+            // 后端失败时回滚到原始顺序
+            console.error('[AccountStore] Reorder accounts failed:', error);
+            set({ accounts });
+            throw error;
+        }
+    },
+
     startOAuthLogin: async () => {
         set({ loading: true, error: null });
         try {
@@ -224,13 +257,12 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         }
     },
 
-    warmUpAccounts: async () => {
+    toggleProxyStatus: async (accountId: string, enable: boolean, reason?: string) => {
         try {
-            const result = await accountService.warmUpAccounts();
-            console.log('[AccountStore] Warm-up started:', result);
-            return result;
+            await accountService.toggleProxyStatus(accountId, enable, reason);
+            await get().fetchAccounts();
         } catch (error) {
-            console.error('[AccountStore] Warm-up failed:', error);
+            console.error('[AccountStore] Toggle proxy status failed:', error);
             throw error;
         }
     },

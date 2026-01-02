@@ -58,7 +58,7 @@ impl AxumServer {
             let mut m = self.custom_mapping.write().await;
             *m = config.custom_mapping.clone();
         }
-        tracing::info!("模型映射 (Anthropic/OpenAI/Custom) 已全量热更新");
+        tracing::debug!("模型映射 (Anthropic/OpenAI/Custom) 已全量热更新");
     }
 
     /// 更新代理配置
@@ -175,6 +175,7 @@ impl AxumServer {
                 "/v1beta/models/:model/countTokens",
                 post(handlers::gemini::handle_count_tokens),
             ) // Specific route priority
+            .route("/v1/models/detect", post(handlers::common::handle_detect_model))
             .route("/v1/api/event_logging/batch", post(silent_ok_handler))
             .route("/v1/api/event_logging", post(silent_ok_handler))
             .route("/healthz", get(health_check_handler))

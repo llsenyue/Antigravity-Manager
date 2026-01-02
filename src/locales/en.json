@@ -24,17 +24,7 @@
         "next_page": "Next",
         "pagination_info": "Showing {{start}} to {{end}} of {{total}} entries",
         "per_page": "Per page",
-        "items": "items",
-        "weekday": {
-            "mon": "Mon",
-            "tue": "Tue",
-            "wed": "Wed",
-            "thu": "Thu",
-            "fri": "Fri",
-            "sat": "Sat",
-            "sun": "Sun"
-        },
-        "disabled": "Disabled"
+        "items": "items"
     },
     "nav": {
         "dashboard": "Dashboard",
@@ -85,9 +75,6 @@
         "free": "FREE",
         "add_account": "Add Account",
         "refresh_all": "Refresh All",
-        "warm_up": "Warm Up",
-        "warm_up_desc": "Trigger 5-hour reset cycle for all models",
-        "warmup_started": "Warm-up process started in background",
         "refresh_selected": "Refresh ({{count}})",
         "export_selected": "Export ({{count}})",
         "delete_selected": "Delete ({{count}})",
@@ -99,8 +86,6 @@
         "forbidden_badge": "403",
         "forbidden_tooltip": "API returned 403 Forbidden, account has no permission for Gemini Code Assist",
         "forbidden_msg": "Forbidden, skip auto-refresh",
-        "cooling": "Cooling",
-        "cooling_tooltip": "Account is in 5-hour cooldown, quota will be restored when timer ends",
         "no_data": "No Data",
         "last_used": "Last Used",
         "reset_time": "Reset Time",
@@ -159,6 +144,7 @@
             "last_used": "Last Used",
             "actions": "Actions"
         },
+        "drag_to_reorder": "Drag to reorder",
         "empty": {
             "title": "No Accounts",
             "desc": "Click the \"Add Account\" button above to add your first account"
@@ -176,9 +162,7 @@
             "refresh_title": "Refresh Quota",
             "batch_refresh_title": "Batch Refresh",
             "refresh_msg": "Are you sure you want to refresh the quota for the current account?",
-            "batch_refresh_msg": "Are you sure you want to refresh quotas for the selected {{count}} accounts? This may take some time.",
-            "warmup_title": "Warm-up Confirmation",
-            "warmup_msg": "This action will send a lightweight request to all Pro/Ultra accounts to trigger their 5-hour quota reset cycle.\n\n💡 Tip: You can configure 'Smart Peak Scheduler' in Settings to automatically run warm-up before your peak usage hours."
+            "batch_refresh_msg": "Are you sure you want to refresh quotas for the selected {{count}} accounts? This may take some time."
         }
     },
     "settings": {
@@ -186,7 +170,7 @@
         "tabs": {
             "general": "General",
             "account": "Account",
-            "proxy": "Proxy",
+            "proxy": "Proxy Settings",
             "advanced": "Advanced",
             "about": "About"
         },
@@ -209,19 +193,10 @@
             "refresh_interval": "Refresh Interval (minutes)",
             "auto_sync": "Auto Sync Current Account",
             "auto_sync_desc": "Automatically sync current active account information periodically",
-            "sync_interval": "Sync Interval (seconds)",
-            "scheduled_warmup": {
-                "title": "Smart Peak Scheduler",
-                "enable": "Enable Scheduled Warmup",
-                "enable_desc": "Automatically warm up accounts 5 hours before your peak usage periods",
-                "schedule_desc": "Set up to 3 peak usage times per day. Warmup triggers 5 hours before each time.",
-                "peak_time": "Peak Time",
-                "warmup_at": "Warmup at",
-                "warmup_suffix": "auto cooldown refresh",
-                "not_set": "Not set",
-                "quota_hint": "Auto warmup only triggers when quota is full. Accounts with used quota will be skipped.",
-                "hint": "Warmup uses minimal quota to start the 5-hour cooldown, ensuring quota is restored by peak time"
-            }
+            "sync_interval": "Sync Interval (seconds)"
+        },
+        "proxy": {
+            "title": "Proxy Settings"
         },
         "advanced": {
             "title": "Advanced Settings",
@@ -238,6 +213,12 @@
             "antigravity_path_select": "Select Antigravity Executable",
             "antigravity_path_detected": "Detected path updated",
             "detect_btn": "Detect",
+            "antigravity_args": "Antigravity Startup Arguments",
+            "antigravity_args_placeholder": "--user-data-dir=/path/to/data --some-other-flag",
+            "antigravity_args_desc": "Specify startup arguments for Antigravity, e.g. --user-data-dir to specify user data directory",
+            "detect_args_btn": "Detect",
+            "antigravity_args_detected": "Startup arguments updated",
+            "antigravity_args_detect_error": "Failed to detect startup arguments",
             "accounts_page_size": "Accounts Page Size",
             "page_size_auto": "Auto Calculate (Recommended)",
             "page_size_desc": "Set the number of accounts displayed per page. Select 'Auto Calculate' to dynamically adjust based on window size.",
@@ -255,7 +236,8 @@
             "author": "Author",
             "wechat": "WeChat",
             "github": "GitHub",
-            "copyright": "Copyright © 2025 Antigravity. All rights reserved.",
+            "view_code": "View Code",
+            "copyright": "Copyright © 2025-2026 Antigravity. All rights reserved.",
             "check_update": "Check for Updates",
             "checking_update": "Checking...",
             "latest_version": "You're up to date",
@@ -391,6 +373,27 @@
                 "url": "Proxy URL",
                 "url_placeholder": "e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:7890",
                 "tip": "Supports HTTP, HTTPS and SOCKS5."
+            },
+            "scheduling": {
+                "title": "Account Rotation & Scheduling",
+                "title_tooltip": "Controls how sessions are bound to accounts and how rate limits are handled.",
+                "subtitle": "Optimizes Prompt Caching and rate limit handling for all protocols (OpenAI/Gemini/Claude).",
+                "mode": "Scheduling Mode",
+                "mode_tooltip": "Cache-First: Bind session to account, wait on rate limit (maximize cache utility); Balance: Bind session, switch account on rate limit; Performance: Standard Round-robin.",
+                "modes": {
+                    "CacheFirst": "Cache First",
+                    "Balance": "Balance",
+                    "PerformanceFirst": "Performance"
+                },
+                "modes_desc": {
+                    "CacheFirst": "Binds session to account, waits precisely if limited (Maximizes Prompt Cache hits).",
+                    "Balance": "Binds session, auto-switches to available account if limited (Balanced cache & availability).",
+                    "PerformanceFirst": "No session binding, pure round-robin rotation (Best for high concurrency)."
+                },
+                "max_wait": "Max Wait (sec)",
+                "max_wait_tooltip": "Only used in 'Cache First' mode: wait instead of switching if the rate limit reset time is below this value.",
+                "clear_bindings": "Clear Session Bindings",
+                "clear_bindings_tooltip": "Hard reset all session-account bindings, forcing accounts to be re-assigned on next request."
             }
         },
         "example": {
@@ -400,7 +403,13 @@
         },
         "dialog": {
             "confirm_regenerate": "Are you sure to regenerate API Key? The old key will be invalid immediately.",
-            "operate_failed": "Operation failed: {{error}}"
+            "operate_failed": "Operation failed: {{error}}",
+            "reset_mapping_title": "Reset Model Mapping",
+            "reset_mapping_msg": "Are you sure you want to reset all model mappings to system defaults? This action cannot be undone.",
+            "regenerate_key_title": "Regenerate API Key",
+            "regenerate_key_msg": "Are you sure you want to regenerate the API Key? The old key will be invalidated immediately.",
+            "clear_bindings_title": "Clear Session Bindings",
+            "clear_bindings_msg": "Are you sure you want to clear all session-account bindings?"
         },
         "model": {
             "flash": "Fast Response",
@@ -522,16 +531,12 @@
             "gemini": "Gemini",
             "claude": "Claude",
             "images": "Images",
-            "account": "Account",
-            "select_accounts": "Select Accounts",
-            "select_all": "Select All",
             "reset": "Reset"
         },
         "table": {
             "status": "Status",
             "method": "Method",
             "model": "Model",
-            "account": "Account",
             "path": "Path",
             "usage": "Tokens",
             "duration": "Duration",
@@ -551,10 +556,6 @@
         "dialog": {
             "clear_title": "Clear Proxy Logs",
             "clear_msg": "Are you sure you want to clear all proxy logs? This action cannot be undone."
-        },
-        "account_stats": {
-            "title": "Account Success Rate"
-        },
-        "unknown_account": "Unknown Account"
+        }
     }
 }

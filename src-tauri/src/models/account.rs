@@ -18,6 +18,15 @@ pub struct Account {
     /// Unix timestamp when the account was disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disabled_at: Option<i64>,
+    /// User manually disabled proxy feature (does not affect app usage).
+    #[serde(default)]
+    pub proxy_disabled: bool,
+    /// Optional human-readable reason for proxy disabling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_disabled_reason: Option<String>,
+    /// Unix timestamp when the proxy was disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_disabled_at: Option<i64>,
     pub created_at: i64,
     pub last_used: i64,
 }
@@ -34,6 +43,9 @@ impl Account {
             disabled: false,
             disabled_reason: None,
             disabled_at: None,
+            proxy_disabled: false,
+            proxy_disabled_reason: None,
+            proxy_disabled_at: None,
             created_at: now,
             last_used: now,
         }

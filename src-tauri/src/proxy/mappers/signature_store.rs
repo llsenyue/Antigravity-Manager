@@ -20,7 +20,7 @@ pub fn store_thought_signature(sig: &str) {
         };
 
         if should_store {
-            tracing::info!(
+            tracing::debug!(
                 "[ThoughtSig] Storing new signature (length: {}, replacing old length: {:?})",
                 sig.len(),
                 guard.as_ref().map(|s| s.len())

@@ -91,6 +91,17 @@ pub async fn delete_accounts(
     Ok(())
 }
 
+/// 重新排序账号列表
+/// 根据传入的账号ID数组顺序更新账号排列
+#[tauri::command]
+pub async fn reorder_accounts(account_ids: Vec<String>) -> Result<(), String> {
+    modules::logger::log_info(&format!("收到账号重排序请求，共 {} 个账号", account_ids.len()));
+    modules::account::reorder_accounts(&account_ids).map_err(|e| {
+        modules::logger::log_error(&format!("账号重排序失败: {}", e));
+        e
+    })
+}
+
 /// 切换账号
 #[tauri::command]
 pub async fn switch_account(app: tauri::AppHandle, account_id: String) -> Result<(), String> {
@@ -162,13 +173,6 @@ pub async fn fetch_account_quota(
     crate::modules::tray::update_tray_menus(&app);
 
     Ok(quota)
-}
-
-/// 一键预热所有账号
-#[tauri::command]
-pub async fn warm_up_accounts() -> Result<String, String> {
-    modules::logger::log_info("收到一键预热请求");
-    modules::quota::warm_up_all_accounts().await
 }
 
 #[derive(serde::Serialize)]
@@ -268,7 +272,7 @@ pub async fn save_config(
         instance.axum_server.update_security(&config.proxy).await;
         // 更新 z.ai 配置
         instance.axum_server.update_zai(&config.proxy).await;
-        tracing::info!("已同步热更新反代服务配置");
+        tracing::debug!("已同步热更新反代服务配置");
     }
 
     Ok(())
@@ -582,6 +586,15 @@ pub async fn get_antigravity_path(bypass_config: Option<bool>) -> Result<String,
     }
 }
 
+/// 获取 Antigravity 启动参数
+#[tauri::command]
+pub async fn get_antigravity_args() -> Result<Vec<String>, String> {
+    match crate::modules::process::get_args_from_running_process() {
+        Some(args) => Ok(args),
+        None => Err("未找到正在运行的 Antigravity 进程".to_string()),
+    }
+}
+
 /// 检测更新响应结构
 #[derive(serde::Serialize)]
 pub struct UpdateInfo {
@@ -664,4 +677,68 @@ fn compare_versions(latest: &str, current: &str) -> bool {
     }
 
     false
+}
+
+/// 切换账号的反代禁用状态
+#[tauri::command]
+pub async fn toggle_proxy_status(
+    app: tauri::AppHandle,
+    proxy_state: tauri::State<'_, crate::commands::proxy::ProxyServiceState>,
+    account_id: String,
+    enable: bool,
+    reason: Option<String>,
+) -> Result<(), String> {
+    modules::logger::log_info(&format!(
+        "切换账号反代状态: {} -> {}",
+        account_id,
+        if enable { "启用" } else { "禁用" }
+    ));
+
+    // 1. 读取账号文件
+    let data_dir = modules::account::get_data_dir()?;
+    let account_path = data_dir.join("accounts").join(format!("{}.json", account_id));
+
+    if !account_path.exists() {
+        return Err(format!("账号文件不存在: {}", account_id));
+    }
+
+    let content = std::fs::read_to_string(&account_path)
+        .map_err(|e| format!("读取账号文件失败: {}", e))?;
+
+    let mut account_json: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("解析账号文件失败: {}", e))?;
+
+    // 2. 更新 proxy_disabled 字段
+    if enable {
+        // 启用反代
+        account_json["proxy_disabled"] = serde_json::Value::Bool(false);
+        account_json["proxy_disabled_reason"] = serde_json::Value::Null;
+        account_json["proxy_disabled_at"] = serde_json::Value::Null;
+    } else {
+        // 禁用反代
+        let now = chrono::Utc::now().timestamp();
+        account_json["proxy_disabled"] = serde_json::Value::Bool(true);
+        account_json["proxy_disabled_at"] = serde_json::Value::Number(now.into());
+        account_json["proxy_disabled_reason"] = serde_json::Value::String(
+            reason.unwrap_or_else(|| "用户手动禁用".to_string())
+        );
+    }
+
+    // 3. 保存到磁盘
+    std::fs::write(&account_path, serde_json::to_string_pretty(&account_json).unwrap())
+        .map_err(|e| format!("写入账号文件失败: {}", e))?;
+
+    modules::logger::log_info(&format!(
+        "账号反代状态已更新: {} ({})",
+        account_id,
+        if enable { "已启用" } else { "已禁用" }
+    ));
+
+    // 4. 如果反代服务正在运行,重新加载账号池
+    let _ = crate::commands::proxy::reload_proxy_accounts(proxy_state).await;
+
+    // 5. 更新托盘菜单
+    crate::modules::tray::update_tray_menus(&app);
+
+    Ok(())
 }

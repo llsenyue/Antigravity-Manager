@@ -599,13 +599,49 @@ function Settings() {
                                 </p>
                             </div>
 
+                            {/* 反重力程序启动参数 */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-900 dark:text-base-content mb-1">
+                                    {t('settings.advanced.antigravity_args')}
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        className="flex-1 px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg bg-gray-50 dark:bg-base-200 text-gray-900 dark:text-base-content font-medium"
+                                        value={formData.antigravity_args ? formData.antigravity_args.join(' ') : ''}
+                                        placeholder={t('settings.advanced.antigravity_args_placeholder')}
+                                        onChange={(e) => {
+                                            const args = e.target.value.trim() === '' ? [] : e.target.value.split(' ').map(arg => arg.trim()).filter(arg => arg !== '');
+                                            setFormData({ ...formData, antigravity_args: args });
+                                        }}
+                                    />
+                                    <button
+                                        className="px-4 py-2 border border-gray-200 dark:border-base-300 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors"
+                                        onClick={async () => {
+                                            try {
+                                                const args = await invoke<string[]>('get_antigravity_args');
+                                                setFormData({ ...formData, antigravity_args: args });
+                                                showToast(t('settings.advanced.antigravity_args_detected'), 'success');
+                                            } catch (error) {
+                                                showToast(`${t('settings.advanced.antigravity_args_detect_error')}: ${error}`, 'error');
+                                            }
+                                        }}
+                                    >
+                                        {t('settings.advanced.detect_args_btn')}
+                                    </button>
+                                </div>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                                    {t('settings.advanced.antigravity_args_desc')}
+                                </p>
+                            </div>
+
                             <div className="border-t border-gray-200 dark:border-base-200 pt-4">
                                 <h3 className="font-medium text-gray-900 dark:text-base-content mb-3">{t('settings.advanced.logs_title')}</h3>
                                 <div className="bg-gray-50 dark:bg-base-200 border border-gray-200 dark:border-base-300 rounded-lg p-3 mb-3">
                                     <p className="text-sm text-gray-600 dark:text-gray-400">{t('settings.advanced.logs_desc')}</p>
                                 </div>
                                 <div className="badge badge-primary badge-outline gap-2 font-mono">
-                                    v3.3.8
+                                    v3.3.12
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <button
@@ -622,7 +658,7 @@ function Settings() {
                     {/* 代理设置 */}
                     {activeTab === 'proxy' && (
                         <div className="space-y-6">
-                            <h2 className="text-lg font-semibold text-gray-900 dark:text-base-content">{t('settings.tabs.proxy')}</h2>
+                            <h2 className="text-lg font-semibold text-gray-900 dark:text-base-content">{t('settings.proxy.title')}</h2>
 
                             <div className="p-4 bg-gray-50 dark:bg-base-200 rounded-lg border border-gray-100 dark:border-base-300">
                                 <h3 className="text-md font-semibold text-gray-900 dark:text-base-content mb-3 flex items-center gap-2">
@@ -707,7 +743,7 @@ function Settings() {
                                         <h3 className="text-3xl font-black text-gray-900 dark:text-base-content tracking-tight mb-2">Antigravity Tools</h3>
                                         <div className="flex items-center justify-center gap-2 text-sm">
                                             <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium border border-blue-200 dark:border-blue-800">
-                                                v3.3.8
+                                                v3.3.12
                                             </span>
                                             <span className="text-gray-400 dark:text-gray-600">•</span>
                                             <span className="text-gray-500 dark:text-gray-400">Professional Account Management</span>
@@ -752,7 +788,7 @@ function Settings() {
                                         <div>
                                             <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">{t('settings.about.github')}</div>
                                             <div className="flex items-center gap-1 font-bold text-gray-900 dark:text-base-content">
-                                                <span>View Code</span>
+                                                <span>{t('settings.about.view_code')}</span>
                                                 <ExternalLink className="w-3 h-3 text-gray-400" />
                                             </div>
                                         </div>

@@ -9,9 +9,16 @@
 
 /// 从 Gemini UsageMetadata 转换为 Claude Usage
 pub fn to_claude_usage(usage_metadata: &super::models::UsageMetadata) -> super::models::Usage {
+    let prompt_tokens = usage_metadata.prompt_token_count.unwrap_or(0);
+    let cached_tokens = usage_metadata.cached_content_token_count.unwrap_or(0);
+    
     super::models::Usage {
-        input_tokens: usage_metadata.prompt_token_count.unwrap_or(0),
+        // input_tokens 应该排除缓存的部分
+        input_tokens: prompt_tokens.saturating_sub(cached_tokens),
         output_tokens: usage_metadata.candidates_token_count.unwrap_or(0),
+        // 缓存统计
+        cache_read_input_tokens: if cached_tokens > 0 { Some(cached_tokens) } else { None },
+        cache_creation_input_tokens: Some(0),  // Gemini 不提供此字段,设为 0
         server_tool_use: None,
     }
 }
@@ -34,6 +41,7 @@ mod tests {
             prompt_token_count: Some(100),
             candidates_token_count: Some(50),
             total_token_count: Some(150),
+            cached_content_token_count: None,
         };
 
         let claude_usage = to_claude_usage(&usage);

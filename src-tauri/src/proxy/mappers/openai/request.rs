@@ -12,11 +12,11 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
     // Resolve grounding config
     let config = crate::proxy::mappers::common_utils::resolve_request_config(&request.model, mapped_model, &tools_val);
 
-    tracing::info!("[Debug] OpenAI Request: original='{}', mapped='{}', type='{}', has_image_config={}", 
+    tracing::debug!("[Debug] OpenAI Request: original='{}', mapped='{}', type='{}', has_image_config={}", 
         request.model, mapped_model, config.request_type, config.image_config.is_some());
     
     // 1. 提取所有 System Message 并注入补丁
-    let mut system_instructions: Vec<String> = request.messages.iter()
+    let system_instructions: Vec<String> = request.messages.iter()
         .filter(|msg| msg.role == "system")
         .filter_map(|msg| {
             msg.content.as_ref().map(|c| match c {
@@ -34,8 +34,7 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
         })
         .collect();
 
-    // 注入 Codex/Coding Agent 补丁
-    system_instructions.push("You are a coding agent. You MUST use the provided 'shell' tool to perform ANY filesystem operations (reading, writing, creating files). Do not output JSON code blocks for tool execution; invoke the functions directly. To create a file, use the 'shell' tool with 'New-Item' or 'Set-Content' (Powershell). NEVER simulate/hallucinate actions in text without calling the tool first.".to_string());
+
 
     // Pre-scan to map tool_call_id to function name (for Codex)
     let mut tool_id_to_name = std::collections::HashMap::new();
@@ -52,7 +51,7 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
     // 从全局存储获取 thoughtSignature (PR #93 支持)
     let global_thought_sig = get_thought_signature();
     if global_thought_sig.is_some() {
-        tracing::info!("从全局存储获取到 thoughtSignature (长度: {})", global_thought_sig.as_ref().unwrap().len());
+        tracing::debug!("从全局存储获取到 thoughtSignature (长度: {})", global_thought_sig.as_ref().unwrap().len());
     }
 
     // 2. 构建 Gemini contents (过滤掉 system)
@@ -74,25 +73,14 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
                 match content {
                     OpenAIContent::String(s) => {
                         if !s.is_empty() {
-                            if role == "user" && mapped_model.contains("gemini-3") {
-                                // 为 Gemini 3 用户消息添加提醒补丁
-                                let reminder = "\n\n(SYSTEM REMINDER: You MUST use the 'shell' tool to perform this action. Do not simply state it is done.)";
-                                parts.push(json!({"text": format!("{}{}", s, reminder)}));
-                            } else {
-                                parts.push(json!({"text": s}));
-                            }
+                            parts.push(json!({"text": s}));
                         }
                     }
                     OpenAIContent::Array(blocks) => {
                         for block in blocks {
                             match block {
                                 OpenAIContentBlock::Text { text } => {
-                                    if role == "user" && mapped_model.contains("gemini-3") {
-                                        let reminder = "\n\n(SYSTEM REMINDER: You MUST use the 'shell' tool to perform this action. Do not simply state it is done.)";
-                                        parts.push(json!({ "text": format!("{}{}", text, reminder) }));
-                                    } else {
-                                        parts.push(json!({"text": text}));
-                                    }
+                                    parts.push(json!({"text": text}));
                                 }
                                 OpenAIContentBlock::ImageUrl { image_url } => {
                                     if image_url.url.starts_with("data:") {
@@ -121,7 +109,7 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
                                             image_url.url.clone()
                                         };
                                         
-                                        tracing::info!("[OpenAI-Request] Reading local image: {}", file_path);
+                                        tracing::debug!("[OpenAI-Request] Reading local image: {}", file_path);
                                         
                                         // 读取文件并转换为 base64
                                         if let Ok(file_bytes) = std::fs::read(&file_path) {
@@ -142,9 +130,9 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
                                             parts.push(json!({
                                                 "inlineData": { "mimeType": mime_type, "data": b64 }
                                             }));
-                                            tracing::info!("[OpenAI-Request] Successfully loaded image: {} ({} bytes)", file_path, file_bytes.len());
+                                            tracing::debug!("[OpenAI-Request] Successfully loaded image: {} ({} bytes)", file_path, file_bytes.len());
                                         } else {
-                                            tracing::warn!("[OpenAI-Request] Failed to read local image: {}", file_path);
+                                            tracing::debug!("[OpenAI-Request] Failed to read local image: {}", file_path);
                                         }
                                     }
                                 }

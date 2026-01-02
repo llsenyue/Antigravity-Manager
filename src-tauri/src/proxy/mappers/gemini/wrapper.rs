@@ -19,13 +19,9 @@ pub fn wrap_request(body: &Value, project_id: &str, mapped_model: &str) -> Value
     // 深度清理 [undefined] 字符串 (Cherry Studio 等客户端常见注入)
     crate::proxy::mappers::common_utils::deep_clean_undefined(&mut inner_request);
 
-    // 强制设置 Gemini v1internal 的最大输出 token 数
-    if let Some(obj) = inner_request.as_object_mut() {
-        let gen_config = obj.entry("generationConfig").or_insert_with(|| json!({}));
-        if let Some(gen_obj) = gen_config.as_object_mut() {
-            gen_obj.insert("maxOutputTokens".to_string(), json!(64000)); // Sync with others
-        }
-    }
+    // [FIX] Removed forced maxOutputTokens (64000) as it exceeds limits for Gemini 1.5 Flash/Pro standard models (8192).
+    // This caused upstream to return empty/invalid responses, leading to 'NoneType' object has no attribute 'strip' in Python clients.
+    // relying on upstream defaults or user provided values is safer.
 
     // 提取 tools 列表以进行联网探测 (Gemini 风格可能是嵌套的)
     let tools_val: Option<Vec<Value>> = inner_request.get("tools").and_then(|t| t.as_array()).map(|arr| {
@@ -63,7 +59,7 @@ pub fn wrap_request(body: &Value, project_id: &str, mapped_model: &str) -> Value
         }
     }
 
-    tracing::info!("[Debug] Gemini Wrap: original='{}', mapped='{}', final='{}', type='{}'", 
+    tracing::debug!("[Debug] Gemini Wrap: original='{}', mapped='{}', final='{}', type='{}'", 
         original_model, final_model_name, config.final_model, config.request_type);
     
     // Inject googleSearch tool if needed

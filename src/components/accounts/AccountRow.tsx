@@ -1,4 +1,4 @@
-import { ArrowRightLeft, RefreshCw, Trash2, Download, Info, Lock, Ban, Diamond, Gem, Circle, Clock, Snowflake } from 'lucide-react';
+import { ArrowRightLeft, RefreshCw, Trash2, Download, Info, Lock, Ban, Diamond, Gem, Circle, Clock, ToggleLeft, ToggleRight } from 'lucide-react';
 import { Account } from '../../types/account';
 import { getQuotaColor, formatTimeRemaining, getTimeRemainingColor } from '../../utils/format';
 import { cn } from '../../utils/cn';
@@ -16,9 +16,12 @@ interface AccountRowProps {
     onViewDetails: () => void;
     onExport: () => void;
     onDelete: () => void;
+    onToggleProxy: () => void;
 }
 
-function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSwitching = false, onSwitch, onRefresh, onViewDetails, onExport, onDelete }: AccountRowProps) {
+
+
+function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSwitching = false, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy }: AccountRowProps) {
     const { t } = useTranslation();
     const geminiProModel = account.quota?.models.find(m => m.name.toLowerCase() === 'gemini-3-pro-high');
     const geminiFlashModel = account.quota?.models.find(m => m.name.toLowerCase() === 'gemini-3-flash');
@@ -90,6 +93,16 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                             </span>
                         )}
 
+                        {account.proxy_disabled && (
+                            <span
+                                className="px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-orange-200/50"
+                                title={account.proxy_disabled_reason || t('accounts.proxy_disabled_tooltip')}
+                            >
+                                <Ban className="w-2.5 h-2.5" />
+                                <span>{t('accounts.proxy_disabled')}</span>
+                            </span>
+                        )}
+
                         {account.quota?.is_forbidden && (
                             <span className="px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-red-200/50" title={t('accounts.forbidden_tooltip')}>
                                 <Lock className="w-2.5 h-2.5" />
@@ -156,13 +169,10 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[36px] text-right font-bold transition-colors flex items-center justify-end gap-0.5",
+                                <span className={cn("w-[36px] text-right font-bold transition-colors",
                                     getQuotaColor(geminiProModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiProModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                 )}>
-                                    {geminiProModel && geminiProModel.percentage < 100 && (
-                                        <span title="冷却中，需要预热"><Snowflake className="w-2.5 h-2.5 text-blue-400 animate-pulse" /></span>
-                                    )}
                                     {geminiProModel ? `${geminiProModel.percentage}%` : '-'}
                                 </span>
                             </div>
@@ -188,13 +198,10 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[36px] text-right font-bold transition-colors flex items-center justify-end gap-0.5",
+                                <span className={cn("w-[36px] text-right font-bold transition-colors",
                                     getQuotaColor(geminiFlashModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiFlashModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                 )}>
-                                    {geminiFlashModel && geminiFlashModel.percentage < 100 && (
-                                        <span title="冷却中，需要预热"><Snowflake className="w-2.5 h-2.5 text-blue-400 animate-pulse" /></span>
-                                    )}
                                     {geminiFlashModel ? `${geminiFlashModel.percentage}%` : '-'}
                                 </span>
                             </div>
@@ -220,13 +227,10 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[36px] text-right font-bold transition-colors flex items-center justify-end gap-0.5",
+                                <span className={cn("w-[36px] text-right font-bold transition-colors",
                                     getQuotaColor(geminiImageModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiImageModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                 )}>
-                                    {geminiImageModel && geminiImageModel.percentage < 100 && (
-                                        <span title="冷却中，需要预热"><Snowflake className="w-2.5 h-2.5 text-blue-400 animate-pulse" /></span>
-                                    )}
                                     {geminiImageModel ? `${geminiImageModel.percentage}%` : '-'}
                                 </span>
                             </div>
@@ -252,13 +256,10 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[36px] text-right font-bold transition-colors flex items-center justify-end gap-0.5",
+                                <span className={cn("w-[36px] text-right font-bold transition-colors",
                                     getQuotaColor(claudeModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(claudeModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                 )}>
-                                    {claudeModel && claudeModel.percentage < 100 && (
-                                        <span title="冷却中，需要预热"><Snowflake className="w-2.5 h-2.5 text-blue-400 animate-pulse" /></span>
-                                    )}
                                     {claudeModel ? `${claudeModel.percentage}%` : '-'}
                                 </span>
                             </div>
@@ -311,6 +312,22 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                         title={t('common.export')}
                     >
                         <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        className={cn(
+                            "p-1.5 rounded-lg transition-all",
+                            account.proxy_disabled
+                                ? "text-gray-500 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30"
+                                : "text-gray-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30"
+                        )}
+                        onClick={(e) => { e.stopPropagation(); onToggleProxy(); }}
+                        title={account.proxy_disabled ? t('accounts.enable_proxy') : t('accounts.disable_proxy')}
+                    >
+                        {account.proxy_disabled ? (
+                            <ToggleRight className="w-3.5 h-3.5" />
+                        ) : (
+                            <ToggleLeft className="w-3.5 h-3.5" />
+                        )}
                     </button>
                     <button
                         className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all"
