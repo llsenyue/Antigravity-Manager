@@ -173,7 +173,7 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                     getQuotaColor(geminiProModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiProModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                 )} title={geminiProModel && geminiProModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
-                                    {geminiProModel && geminiProModel.percentage < 100 && '❄️'}
+                                    {geminiProModel && geminiProModel.percentage < 100 && <span className="text-blue-500 mr-0.5">❄</span>}
                                     {geminiProModel ? `${geminiProModel.percentage}%` : '-'}
                                 </span>
                             </div>
@@ -203,7 +203,7 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                     getQuotaColor(geminiFlashModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiFlashModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                 )} title={geminiFlashModel && geminiFlashModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
-                                    {geminiFlashModel && geminiFlashModel.percentage < 100 && '❄️'}
+                                    {geminiFlashModel && geminiFlashModel.percentage < 100 && <span className="text-blue-500 mr-0.5">❄</span>}
                                     {geminiFlashModel ? `${geminiFlashModel.percentage}%` : '-'}
                                 </span>
                             </div>
@@ -233,7 +233,7 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                     getQuotaColor(geminiImageModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiImageModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                 )} title={geminiImageModel && geminiImageModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
-                                    {geminiImageModel && geminiImageModel.percentage < 100 && '❄️'}
+                                    {geminiImageModel && geminiImageModel.percentage < 100 && <span className="text-blue-500 mr-0.5">❄</span>}
                                     {geminiImageModel ? `${geminiImageModel.percentage}%` : '-'}
                                 </span>
                             </div>
@@ -263,7 +263,7 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                                     getQuotaColor(claudeModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(claudeModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
                                 )} title={claudeModel && claudeModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
-                                    {claudeModel && claudeModel.percentage < 100 && '❄️'}
+                                    {claudeModel && claudeModel.percentage < 100 && <span className="text-blue-500 mr-0.5">❄</span>}
                                     {claudeModel ? `${claudeModel.percentage}%` : '-'}
                                 </span>
                             </div>
