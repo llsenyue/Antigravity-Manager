@@ -162,7 +162,7 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
             } else if (lowerFilter === '__gemini__') {
                 result = result.filter(log => {
                     const model = (log.model || '').toLowerCase();
-                    return (model.startsWith('gpt') || model.startsWith('gemini')) && !model.startsWith('claude');
+                    return model.startsWith('gpt') || model.startsWith('gemini');
                 });
             } else if (lowerFilter === '__claude__') {
                 result = result.filter(log => {
@@ -175,8 +175,8 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
                     return url.includes('/images');
                 });
             } else if (lowerFilter === '__error__') {
-                // 仅错误 - 匹配 4xx 状态码
-                result = result.filter(log => log.status >= 400 && log.status < 500);
+                // 仅错误 - 匹配 4xx 和 5xx 状态码
+                result = result.filter(log => log.status >= 400);
             } else {
                 // Regular text search
                 result = result.filter(log => {
