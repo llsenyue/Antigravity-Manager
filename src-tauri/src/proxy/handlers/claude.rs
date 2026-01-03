@@ -611,6 +611,7 @@ pub async fn handle_messages(
             if request.stream {
                 let stream = response.bytes_stream();
                 let gemini_stream = Box::pin(stream);
+                let email_for_header = email.clone();
                 let claude_stream = create_claude_sse_stream(gemini_stream, trace_id, email);
 
                 // 转换为 Bytes stream
@@ -626,6 +627,7 @@ pub async fn handle_messages(
                     .header(header::CONTENT_TYPE, "text/event-stream")
                     .header(header::CACHE_CONTROL, "no-cache")
                     .header(header::CONNECTION, "keep-alive")
+                    .header("X-Account-Email", &email_for_header)
                     .body(Body::from_stream(sse_stream))
                     .unwrap();
             } else {
@@ -676,7 +678,14 @@ pub async fn handle_messages(
                     cache_info
                 );
 
-                return Json(claude_response).into_response();
+                let json_body = serde_json::to_string(&claude_response).unwrap_or_default();
+                return Response::builder()
+                    .status(StatusCode::OK)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header("X-Account-Email", &email)
+                    .body(Body::from(json_body))
+                    .unwrap()
+                    .into_response();
             }
         }
         
