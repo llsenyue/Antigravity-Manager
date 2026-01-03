@@ -82,7 +82,7 @@ pub fn get_logs(limit: usize) -> Result<Vec<ProxyRequestLog>, String> {
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, timestamp, method, url, status, duration, model, error, request_body, response_body, input_tokens, output_tokens, account_email
+        "SELECT id, timestamp, method, url, status, duration, model, error, request_body, response_body, input_tokens, output_tokens, account_email, mapped_model
          FROM request_logs 
          ORDER BY timestamp DESC 
          LIMIT ?1"
