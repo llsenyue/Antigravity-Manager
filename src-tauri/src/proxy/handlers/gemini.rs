@@ -58,6 +58,7 @@ pub async fn handle_generate(
             &*state.custom_mapping.read().await,
             &*state.openai_mapping.read().await,
             &*state.anthropic_mapping.read().await,
+            false, // Gemini 请求不应用 Claude 家族映射
         );
         // 提取 tools 列表以进行联网探测 (Gemini 风格可能是嵌套的)
         let tools_val: Option<Vec<Value>> =
@@ -284,62 +285,34 @@ pub async fn handle_generate(
 pub async fn handle_list_models(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let model_group = "gemini";
-    let (access_token, _, _) = state
-        .token_manager
-        .get_token(model_group, false, None)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                format!("Token error: {}", e),
-            )
-        })?;
+    use crate::proxy::common::model_mapping::get_all_dynamic_models;
 
-    // Fetch from upstream
-    let upstream_models = state
-        .upstream
-        .fetch_available_models(&access_token)
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
+    // 获取所有动态模型列表（与 /v1/models 一致）
+    let model_ids = get_all_dynamic_models(
+        &state.openai_mapping,
+        &state.custom_mapping,
+        &state.anthropic_mapping,
+    )
+    .await;
 
-    // Transform map to Gemini list format
-    let mut models = Vec::new();
-    if let Some(obj) = upstream_models.as_object() {
-        debug!("Upstream models keys: {:?}", obj.keys());
-        for (key, value) in obj {
-            let description = value
-                .get("description")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let display_name = value
-                .get("displayName")
-                .and_then(|v| v.as_str())
-                .unwrap_or(key);
-
-            models.push(json!({
-                "name": format!("models/{}", key),
+    // 转换为 Gemini API 格式
+    let models: Vec<_> = model_ids
+        .into_iter()
+        .map(|id| {
+            json!({
+                "name": format!("models/{}", id),
                 "version": "001",
-                "displayName": display_name,
-                "description": description,
+                "displayName": id.clone(),
+                "description": "",
                 "inputTokenLimit": 128000,
                 "outputTokenLimit": 8192,
                 "supportedGenerationMethods": ["generateContent", "countTokens"],
                 "temperature": 1.0,
                 "topP": 0.95,
                 "topK": 64
-            }));
-        }
-    }
-
-    // Fallback
-    if models.is_empty() {
-        models.push(json!({
-            "name": "models/gemini-2.5-pro",
-            "displayName": "Gemini 2.5 Pro",
-            "supportedGenerationMethods": ["generateContent", "countTokens"]
-        }));
-    }
+            })
+        })
+        .collect();
 
     Ok(Json(json!({ "models": models })))
 }

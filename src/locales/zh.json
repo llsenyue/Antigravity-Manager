@@ -184,7 +184,7 @@
         "tabs": {
             "general": "通用",
             "account": "账号",
-            "proxy": "反代设置",
+            "proxy": "代理设置",
             "advanced": "高级",
             "about": "关于"
         },
@@ -222,7 +222,7 @@
             }
         },
         "proxy": {
-            "title": "反代设置"
+            "title": "代理设置"
         },
         "advanced": {
             "title": "高级设置",

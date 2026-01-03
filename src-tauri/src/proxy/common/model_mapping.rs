@@ -147,11 +147,17 @@ pub async fn get_all_dynamic_models(
 
 /// 核心模型路由解析引擎
 /// 优先级：Custom Mapping (精确) > Group Mapping (家族) > System Mapping (内置插件)
+/// 
+/// # 参数
+/// - `apply_claude_family_mapping`: 是否对 Claude 模型应用家族映射
+///   - `true`: CLI 请求，应用家族映射（如 claude-sonnet-4-5 -> gemini-3-pro-high）
+///   - `false`: 非 CLI 请求（如 Cherry Studio），跳过家族映射，直接穿透
 pub fn resolve_model_route(
     original_model: &str,
     custom_mapping: &std::collections::HashMap<String, String>,
     openai_mapping: &std::collections::HashMap<String, String>,
     anthropic_mapping: &std::collections::HashMap<String, String>,
+    apply_claude_family_mapping: bool,
 ) -> String {
     // 1. 检查自定义精确映射 (优先级最高)
     if let Some(target) = custom_mapping.get(original_model) {
@@ -194,6 +200,26 @@ pub fn resolve_model_route(
 
     // 3. 检查家族分组映射 (Anthropic 系)
     if lower_model.starts_with("claude-") {
+        // [CRITICAL] 检查是否应用 Claude 家族映射
+        // 如果是非 CLI 请求（如 Cherry Studio），先检查是否为原生支持的直通模型
+        if !apply_claude_family_mapping {
+            if let Some(mapped) = CLAUDE_TO_GEMINI.get(original_model) {
+                if *mapped == original_model {
+                    // 原生支持的直通模型，跳过家族映射
+                    crate::modules::logger::log_info(&format!("[Router] 非 CLI 请求，跳过家族映射: {}", original_model));
+                    return original_model.to_string();
+                }
+            }
+        }
+        
+        // [NEW] Haiku 智能降级策略
+        // 将所有 Haiku 模型自动降级到 gemini-2.5-flash-lite (最轻量/便宜的模型)
+        // [FIX] 仅在 CLI 模式下生效 (apply_claude_family_mapping == true)
+        if apply_claude_family_mapping && lower_model.contains("haiku") {
+            crate::modules::logger::log_info(&format!("[Router] Haiku 智能降级 (CLI): {} -> gemini-2.5-flash-lite", original_model));
+            return "gemini-2.5-flash-lite".to_string();
+        }
+
         let family_key = if lower_model.contains("4-5") || lower_model.contains("4.5") {
             "claude-4.5-series"
         } else if lower_model.contains("3-5") || lower_model.contains("3.5") {

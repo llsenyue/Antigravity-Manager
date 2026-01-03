@@ -20,6 +20,7 @@ pub async fn handle_detect_model(
         &*state.custom_mapping.read().await,
         &*state.openai_mapping.read().await,
         &*state.anthropic_mapping.read().await,
+        false,  // Common 请求不应用 Claude 家族映射
     );
 
     // 2. Resolve capabilities

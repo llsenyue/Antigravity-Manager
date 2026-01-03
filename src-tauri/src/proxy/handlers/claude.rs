@@ -458,19 +458,41 @@ pub async fn handle_messages(
     let mut retried_without_thinking = false;
     
     for attempt in 0..max_attempts {
-        // 3. 模型路由与配置解析 (提前解析以确定请求类型)
-        let mut mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
+        // 2. 模型路由与配置解析 (提前解析以确定请求类型)
+        // 先不应用家族映射，获取初步的 mapped_model
+        let initial_mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
             &request_for_body.model,
             &*state.custom_mapping.read().await,
             &*state.openai_mapping.read().await,
             &*state.anthropic_mapping.read().await,
+            false,  // 先不应用家族映射
         );
+        
         // 将 Claude 工具转为 Value 数组以便探测联网
         let tools_val: Option<Vec<Value>> = request_for_body.tools.as_ref().map(|list| {
             list.iter().map(|t| serde_json::to_value(t).unwrap_or(json!({}))).collect()
         });
 
-        let config = crate::proxy::mappers::common_utils::resolve_request_config(&request_for_body.model, &mapped_model, &tools_val);
+        let config = crate::proxy::mappers::common_utils::resolve_request_config(&request_for_body.model, &initial_mapped_model, &tools_val);
+
+        // 3. 根据 request_type 决定是否应用 Claude 家族映射
+        // request_type == "agent" 表示 CLI 请求，应该应用家族映射
+        // 其他类型（web_search, image_gen）不应用家族映射
+        let is_cli_request = config.request_type == "agent";
+        
+        let mut mapped_model = if is_cli_request {
+            // CLI 请求：重新调用 resolve_model_route，应用家族映射
+            crate::proxy::common::model_mapping::resolve_model_route(
+                &request_for_body.model,
+                &*state.custom_mapping.read().await,
+                &*state.openai_mapping.read().await,
+                &*state.anthropic_mapping.read().await,
+                true,  // CLI 请求应用家族映射
+            )
+        } else {
+            // 非 CLI 请求：使用初步的 mapped_model（已跳过家族映射）
+            initial_mapped_model
+        };
 
         // 0. 尝试提取 session_id 用于粘性调度 (Phase 2/3)
         // 使用 SessionManager 生成稳定的会话指纹

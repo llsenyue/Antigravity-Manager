@@ -59,6 +59,7 @@ pub async fn handle_chat_completions(
             &*state.custom_mapping.read().await,
             &*state.openai_mapping.read().await,
             &*state.anthropic_mapping.read().await,
+            false,  // OpenAI 请求不应用 Claude 家族映射
         );
         // 将 OpenAI 工具转为 Value 数组以便探测联网
         let tools_val: Option<Vec<Value>> = openai_req
@@ -549,6 +550,7 @@ pub async fn handle_completions(
             &*state.custom_mapping.read().await,
             &*state.openai_mapping.read().await,
             &*state.anthropic_mapping.read().await,
+            false,  // OpenAI 请求不应用 Claude 家族映射
         );
         // 将 OpenAI 工具转为 Value 数组以便探测联网
         let tools_val: Option<Vec<Value>> = openai_req

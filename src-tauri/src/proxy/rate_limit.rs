@@ -2,6 +2,19 @@ use dashmap::DashMap;
 use std::time::{SystemTime, Duration};
 use regex::Regex;
 
+/// 限流原因类型
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RateLimitReason {
+    /// 配额耗尽 (QUOTA_EXHAUSTED)
+    QuotaExhausted,
+    /// 速率限制 (RATE_LIMIT_EXCEEDED)
+    RateLimitExceeded,
+    /// 服务器错误 (5xx)
+    ServerError,
+    /// 未知原因
+    Unknown,
+}
+
 /// 限流信息
 #[derive(Debug, Clone)]
 pub struct RateLimitInfo {
@@ -13,6 +26,8 @@ pub struct RateLimitInfo {
     /// 检测时间
     #[allow(dead_code)]
     pub detected_at: SystemTime,
+    /// 限流原因
+    pub reason: RateLimitReason,
 }
 
 /// 限流跟踪器
@@ -57,34 +72,55 @@ impl RateLimitTracker {
             return None;
         }
         
+        // 1. 解析限流原因类型
+        let reason = if status == 429 {
+            self.parse_rate_limit_reason(body)
+        } else {
+            RateLimitReason::ServerError
+        };
+        
         let mut retry_after_sec = None;
         
-        // 1. 从 Retry-After header 提取
+        // 2. 从 Retry-After header 提取
         if let Some(retry_after) = retry_after_header {
             if let Ok(seconds) = retry_after.parse::<u64>() {
                 retry_after_sec = Some(seconds);
             }
         }
         
-        // 2. 从错误消息提取 (优先尝试 JSON 解析，再试正则)
+        // 3. 从错误消息提取 (优先尝试 JSON 解析，再试正则)
         if retry_after_sec.is_none() {
             retry_after_sec = self.parse_retry_time_from_body(body);
         }
         
-        // 3. 处理默认值与软避让逻辑
+        // 4. 处理默认值与软避让逻辑（根据限流类型设置不同默认值）
         let retry_sec = match retry_after_sec {
             Some(s) => {
                 // 引入 PR #28 的安全缓冲区：最小 2 秒，防止极高频无效重试
                 if s < 2 { 2 } else { s }
             },
             None => {
-                if status == 429 {
-                    tracing::debug!("无法解析 429 限流时间, 使用默认值 60秒");
-                    60
-                } else {
-                    // 对于 5xx 错误，执行“软避让”：默认锁定 20 秒，强制切换账号
-                    tracing::warn!("检测到 5xx 错误 ({}), 执行 20s 软避让...", status);
-                    20
+                match reason {
+                    RateLimitReason::QuotaExhausted => {
+                        // 配额耗尽：使用较长的默认值（1小时），避免频繁重试
+                        tracing::warn!("检测到配额耗尽 (QUOTA_EXHAUSTED)，使用默认值 3600秒 (1小时)");
+                        3600
+                    },
+                    RateLimitReason::RateLimitExceeded => {
+                        // 速率限制：使用较短的默认值（30秒），可以较快恢复
+                        tracing::debug!("检测到速率限制 (RATE_LIMIT_EXCEEDED)，使用默认值 30秒");
+                        30
+                    },
+                    RateLimitReason::ServerError => {
+                        // 服务器错误：执行"软避让"，默认锁定 20 秒
+                        tracing::warn!("检测到 5xx 错误 ({}), 执行 20s 软避让...", status);
+                        20
+                    },
+                    RateLimitReason::Unknown => {
+                        // 未知原因：使用中等默认值（60秒）
+                        tracing::debug!("无法解析 429 限流原因, 使用默认值 60秒");
+                        60
+                    }
                 }
             }
         };
@@ -93,19 +129,97 @@ impl RateLimitTracker {
             reset_time: SystemTime::now() + Duration::from_secs(retry_sec),
             retry_after_sec: retry_sec,
             detected_at: SystemTime::now(),
+            reason,
         };
         
         // 存储
         self.limits.insert(account_id.to_string(), info.clone());
         
         tracing::warn!(
-            "账号 {} [{}] 状态标记生效, 重置延时: {}秒",
+            "账号 {} [{}] 限流类型: {:?}, 重置延时: {}秒",
             account_id,
             status,
+            reason,
             retry_sec
         );
         
         Some(info)
+    }
+    
+    /// 解析限流原因类型
+    fn parse_rate_limit_reason(&self, body: &str) -> RateLimitReason {
+        // 尝试从 JSON 中提取 reason 字段
+        let trimmed = body.trim();
+        if trimmed.starts_with('{') || trimmed.starts_with('[') {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                if let Some(reason_str) = json.get("error")
+                    .and_then(|e| e.get("details"))
+                    .and_then(|d| d.as_array())
+                    .and_then(|a| a.get(0))
+                    .and_then(|o| o.get("reason"))
+                    .and_then(|v| v.as_str()) {
+                    
+                    return match reason_str {
+                        "QUOTA_EXHAUSTED" => RateLimitReason::QuotaExhausted,
+                        "RATE_LIMIT_EXCEEDED" => RateLimitReason::RateLimitExceeded,
+                        _ => RateLimitReason::Unknown,
+                    };
+                }
+            }
+        }
+        
+        // 如果无法从 JSON 解析，尝试从消息文本判断
+        if body.contains("exhausted") || body.contains("quota") {
+            RateLimitReason::QuotaExhausted
+        } else if body.contains("rate limit") || body.contains("too many requests") {
+            RateLimitReason::RateLimitExceeded
+        } else {
+            RateLimitReason::Unknown
+        }
+    }
+    
+    /// 通用时间解析函数：支持 "2h1m1s" 等所有格式组合
+    fn parse_duration_string(&self, s: &str) -> Option<u64> {
+        tracing::debug!("[时间解析] 尝试解析: '{}'", s);
+        
+        // 使用正则表达式提取小时、分钟、秒、毫秒
+        // 支持格式："2h1m1s", "1h30m", "5m", "30s", "500ms" 等
+        let re = Regex::new(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?(?:(\d+)ms)?").ok()?;
+        let caps = match re.captures(s) {
+            Some(c) => c,
+            None => {
+                tracing::warn!("[时间解析] 正则未匹配: '{}'", s);
+                return None;
+            }
+        };
+        
+        let hours = caps.get(1)
+            .and_then(|m| m.as_str().parse::<u64>().ok())
+            .unwrap_or(0);
+        let minutes = caps.get(2)
+            .and_then(|m| m.as_str().parse::<u64>().ok())
+            .unwrap_or(0);
+        let seconds = caps.get(3)
+            .and_then(|m| m.as_str().parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let milliseconds = caps.get(4)
+            .and_then(|m| m.as_str().parse::<u64>().ok())
+            .unwrap_or(0);
+        
+        tracing::debug!("[时间解析] 提取结果: {}h {}m {:.3}s {}ms", hours, minutes, seconds, milliseconds);
+        
+        // 计算总秒数
+        let total_seconds = hours * 3600 + minutes * 60 + seconds.ceil() as u64 + (milliseconds + 999) / 1000;
+        
+        // 如果总秒数为 0，说明解析失败
+        if total_seconds == 0 {
+            tracing::warn!("[时间解析] 失败: '{}' (总秒数为0)", s);
+            None
+        } else {
+            tracing::info!("[时间解析] ✓ 成功: '{}' => {}秒 ({}h {}m {:.1}s)", 
+                s, total_seconds, hours, minutes, seconds);
+            Some(total_seconds)
+        }
     }
     
     /// 从错误消息 body 中解析重置时间
@@ -114,24 +228,21 @@ impl RateLimitTracker {
         let trimmed = body.trim();
         if trimmed.starts_with('{') || trimmed.starts_with('[') {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                // 1. Google 常见的 quotaResetDelay 格式 (如 "75.5s" 或 "500ms")
+                // 1. Google 常见的 quotaResetDelay 格式 (支持所有格式："2h1m1s", "1h30m", "42s", "500ms" 等)
+                // 路径: error.details[0].metadata.quotaResetDelay
                 if let Some(delay_str) = json.get("error")
                     .and_then(|e| e.get("details"))
                     .and_then(|d| d.as_array())
                     .and_then(|a| a.get(0))
-                    .and_then(|o| o.get("quotaResetDelay"))
+                    .and_then(|o| o.get("metadata"))  // 添加 metadata 层级
+                    .and_then(|m| m.get("quotaResetDelay"))
                     .and_then(|v| v.as_str()) {
                     
-                    if let Ok(re) = Regex::new(r"(\d+(?:\.\d+)?)(ms|s)") {
-                        if let Some(caps) = re.captures(delay_str) {
-                            let val = caps[1].parse::<f64>().unwrap_or(0.0);
-                            let unit = &caps[2];
-                            return if unit == "s" {
-                                Some(val.ceil() as u64)
-                            } else {
-                                Some((val / 1000.0).ceil() as u64)
-                            };
-                        }
+                    tracing::debug!("[JSON解析] 找到 quotaResetDelay: '{}'", delay_str);
+                    
+                    // 使用通用时间解析函数
+                    if let Some(seconds) = self.parse_duration_string(delay_str) {
+                        return Some(seconds);
                     }
                 }
                 
