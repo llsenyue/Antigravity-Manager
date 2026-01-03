@@ -5,11 +5,13 @@ interface AccountGridProps {
     accounts: Account[];
     selectedIds: Set<string>;
     refreshingIds: Set<string>;
+    warmingIds?: Set<string>;
     onToggleSelect: (id: string) => void;
     currentAccountId: string | null;
     switchingAccountId: string | null;
     onSwitch: (accountId: string) => void;
     onRefresh: (accountId: string) => void;
+    onWarmUp?: (accountId: string) => void;
     onViewDetails: (accountId: string) => void;
     onExport: (accountId: string) => void;
     onDelete: (accountId: string) => void;
@@ -17,7 +19,7 @@ interface AccountGridProps {
 }
 
 
-function AccountGrid({ accounts, selectedIds, refreshingIds, onToggleSelect, currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy }: AccountGridProps) {
+function AccountGrid({ accounts, selectedIds, refreshingIds, warmingIds: _warmingIds, onToggleSelect, currentAccountId, switchingAccountId, onSwitch, onRefresh, onWarmUp: _onWarmUp, onViewDetails, onExport, onDelete, onToggleProxy }: AccountGridProps) {
     if (accounts.length === 0) {
         return (
             <div className="bg-white dark:bg-base-100 rounded-2xl p-12 shadow-sm border border-gray-100 dark:border-base-200 text-center">
