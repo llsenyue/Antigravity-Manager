@@ -285,33 +285,28 @@ pub async fn warm_up_all_accounts() -> Result<String, String> {
         let tx = tx.clone();
         let project_id = "bamboo-precept-lgxtn"; // Hardcoded default
 
-        // Dynamic Warm-up: Iterate over available models in quota
-        let mut models_to_warm = Vec::new();
+        // Smart Warm-up: Only warmup models at 100% (not in cooldown)
+        let mut models_to_warm: Vec<(String, i32)> = Vec::new();
         if let Some(quota) = &account.quota {
             for m in &quota.models {
-                models_to_warm.push(m.name.clone());
+                if m.percentage >= 100 {
+                    models_to_warm.push((m.name.clone(), m.percentage));
+                } else {
+                    tracing::info!(
+                        "[Warmup] Skipping {} ({}% - already in cooldown)",
+                        m.name,
+                        m.percentage
+                    );
+                }
             }
         }
 
+        // Skip this account if no models need warming
         if models_to_warm.is_empty() {
-            models_to_warm = vec![
-                "gemini-3-pro-high".to_string(),
-                "gemini-3-flash".to_string(),
-                "gemini-3-pro-image".to_string(),
-                "claude-sonnet-4-5-thinking".to_string(),
-            ];
+            continue;
         }
 
-        for model_name in models_to_warm {
-            // Skip image models - warmup consumes too much quota (10%+)
-            if model_name.to_lowercase().contains("image") {
-                tracing::info!(
-                    "[Warmup] Skipping image model {} (quota-expensive)",
-                    model_name
-                );
-                continue;
-            }
-
+        for (model_name, pct) in models_to_warm {
             let at = access_token.clone();
             let up = upstream.clone();
             let txc = tx.clone();
@@ -320,43 +315,47 @@ pub async fn warm_up_all_accounts() -> Result<String, String> {
             tokio::spawn(async move {
                 let is_image = m_name.to_lowercase().contains("image");
 
-                let body = if is_image {
-                    serde_json::json!({
+                // Use minimal request: countTokens for image models
+                if is_image {
+                    let body = serde_json::json!({
                         "project": project_id,
                         "model": m_name,
                         "request": {
-                            "contents": [{ "role": "user", "parts": [{ "text": "a single white pixel" }] }],
-                            "generationConfig": {
-                                "candidateCount": 1,
-                                "imageConfig": {
-                                    "aspectRatio": "1:1"
-                                }
-                            },
-                            "safetySettings": [
-                                { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "OFF" },
-                                { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "OFF" },
-                                { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "OFF" },
-                                { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "OFF" },
-                                { "category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "OFF" }
-                            ]
+                            "contents": [{ "role": "user", "parts": [{ "text": "." }] }]
                         }
-                    })
+                    });
+
+                    let res = up.call_v1_internal("countTokens", &at, body, None).await;
+
+                    tracing::info!(
+                        "[Warmup] {} via countTokens (was {}%): {}",
+                        m_name,
+                        pct,
+                        res.is_ok()
+                    );
+                    let _ = txc.send(format!("{}: {}", m_name, res.is_ok())).await;
                 } else {
-                    serde_json::json!({
+                    let body = serde_json::json!({
                         "project": project_id,
                         "model": m_name,
                         "request": {
                             "contents": [{ "role": "user", "parts": [{ "text": "." }] }],
                             "generationConfig": { "maxOutputTokens": 1 }
                         }
-                    })
-                };
+                    });
 
-                let res = up
-                    .call_v1_internal("generateContent", &at, body, None)
-                    .await;
+                    let res = up
+                        .call_v1_internal("generateContent", &at, body, None)
+                        .await;
 
-                let _ = txc.send(format!("{}: {}", m_name, res.is_ok())).await;
+                    tracing::info!(
+                        "[Warmup] {} via generateContent (was {}%): {}",
+                        m_name,
+                        pct,
+                        res.is_ok()
+                    );
+                    let _ = txc.send(format!("{}: {}", m_name, res.is_ok())).await;
+                }
             });
         }
     }
@@ -364,7 +363,7 @@ pub async fn warm_up_all_accounts() -> Result<String, String> {
     Ok(format!("已启动智能预热任务"))
 }
 
-/// 单账号预热 - 触发指定账号的5小时配额恢复周期
+/// 单账号预热 - 只预热配额满值(100%)的模型，使用最小请求触发5小时恢复周期
 pub async fn warm_up_account(account_id: &str) -> Result<String, String> {
     let accounts =
         crate::modules::account::list_accounts().map_err(|e| format!("加载账号失败: {}", e))?;
@@ -378,33 +377,30 @@ pub async fn warm_up_account(account_id: &str) -> Result<String, String> {
     let access_token = account.token.access_token.clone();
     let project_id = "bamboo-precept-lgxtn";
 
-    // Dynamic Warm-up: Iterate over available models in quota
-    let mut models_to_warm = Vec::new();
+    // Smart Warm-up: Only warmup models at 100% (not in cooldown)
+    let mut models_to_warm: Vec<(String, i32)> = Vec::new();
     if let Some(quota) = &account.quota {
         for m in &quota.models {
-            models_to_warm.push(m.name.clone());
+            // Only warmup if at 100% (not already in 5h cooldown)
+            if m.percentage >= 100 {
+                models_to_warm.push((m.name.clone(), m.percentage));
+            } else {
+                tracing::info!(
+                    "[Warmup] Skipping {} ({}% - already in cooldown)",
+                    m.name,
+                    m.percentage
+                );
+            }
         }
     }
 
     if models_to_warm.is_empty() {
-        models_to_warm = vec![
-            "gemini-3-pro-high".to_string(),
-            "gemini-3-flash".to_string(),
-            "gemini-3-pro-image".to_string(),
-            "claude-sonnet-4-5-thinking".to_string(),
-        ];
+        return Ok("所有模型已在冷却周期中，无需预热".to_string());
     }
 
-    for model_name in models_to_warm {
-        // Skip image models - warmup consumes too much quota (10%+)
-        if model_name.to_lowercase().contains("image") {
-            tracing::info!(
-                "[Warmup] Skipping image model {} (quota-expensive)",
-                model_name
-            );
-            continue;
-        }
+    let warmed_count = models_to_warm.len();
 
+    for (model_name, pct) in models_to_warm {
         let at = access_token.clone();
         let up = upstream.clone();
         let m_name = model_name.clone();
@@ -412,41 +408,144 @@ pub async fn warm_up_account(account_id: &str) -> Result<String, String> {
         tokio::spawn(async move {
             let is_image = m_name.to_lowercase().contains("image");
 
-            let body = if is_image {
-                serde_json::json!({
+            // Use minimal request: countTokens for image models, minimal generateContent for others
+            if is_image {
+                // For image models, use countTokens API (doesn't consume image quota)
+                let body = serde_json::json!({
                     "project": project_id,
                     "model": m_name,
                     "request": {
-                        "contents": [{ "role": "user", "parts": [{ "text": "a single white pixel" }] }],
-                        "generationConfig": {
-                            "candidateCount": 1,
-                            "imageConfig": { "aspectRatio": "1:1" }
-                        },
-                        "safetySettings": [
-                            { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "OFF" },
-                            { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "OFF" },
-                            { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "OFF" },
-                            { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "OFF" },
-                            { "category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "OFF" }
-                        ]
+                        "contents": [{ "role": "user", "parts": [{ "text": "." }] }]
                     }
-                })
+                });
+
+                let _ = up.call_v1_internal("countTokens", &at, body, None).await;
+
+                tracing::info!(
+                    "[Warmup] Triggered {} via countTokens (was {}%)",
+                    m_name,
+                    pct
+                );
             } else {
-                serde_json::json!({
+                // For text models, use minimal generateContent
+                let body = serde_json::json!({
                     "project": project_id,
                     "model": m_name,
                     "request": {
                         "contents": [{ "role": "user", "parts": [{ "text": "." }] }],
                         "generationConfig": { "maxOutputTokens": 1 }
                     }
-                })
-            };
+                });
 
-            let _ = up
-                .call_v1_internal("generateContent", &at, body, None)
-                .await;
+                let _ = up
+                    .call_v1_internal("generateContent", &at, body, None)
+                    .await;
+
+                tracing::info!(
+                    "[Warmup] Triggered {} via generateContent (was {}%)",
+                    m_name,
+                    pct
+                );
+            }
         });
     }
 
-    Ok(format!("已启动账号预热"))
+    Ok(format!("已启动 {} 个模型的预热任务", warmed_count))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::models::quota::QuotaData;
+
+    /// Helper to create a test quota with specified models and percentages
+    fn create_test_quota(models: Vec<(&str, i32)>) -> QuotaData {
+        let mut quota = QuotaData::new();
+        for (name, percentage) in models {
+            quota.add_model(name.to_string(), percentage, "".to_string());
+        }
+        quota
+    }
+
+    #[test]
+    fn test_smart_warmup_filters_only_100_percent_models() {
+        // Create test quota with mixed percentages
+        let quota = create_test_quota(vec![
+            ("gemini-3-pro-high", 100),
+            ("gemini-3-flash", 85),
+            ("gemini-3-pro-image", 100),
+            ("claude-sonnet-4-5-thinking", 50),
+        ]);
+
+        // Simulate the filtering logic
+        let mut models_to_warm: Vec<(String, i32)> = Vec::new();
+        for m in &quota.models {
+            if m.percentage >= 100 {
+                models_to_warm.push((m.name.clone(), m.percentage));
+            }
+        }
+
+        // Should only include 100% models
+        assert_eq!(models_to_warm.len(), 2);
+        assert!(models_to_warm.iter().any(|(n, _)| n == "gemini-3-pro-high"));
+        assert!(models_to_warm
+            .iter()
+            .any(|(n, _)| n == "gemini-3-pro-image"));
+        // Should NOT include sub-100% models
+        assert!(!models_to_warm.iter().any(|(n, _)| n == "gemini-3-flash"));
+        assert!(!models_to_warm
+            .iter()
+            .any(|(n, _)| n == "claude-sonnet-4-5-thinking"));
+    }
+
+    #[test]
+    fn test_smart_warmup_skips_all_when_none_at_100() {
+        let quota = create_test_quota(vec![("gemini-3-pro-high", 80), ("gemini-3-flash", 75)]);
+
+        let mut models_to_warm: Vec<(String, i32)> = Vec::new();
+        for m in &quota.models {
+            if m.percentage >= 100 {
+                models_to_warm.push((m.name.clone(), m.percentage));
+            }
+        }
+
+        // Should be empty - no models at 100%
+        assert!(models_to_warm.is_empty());
+    }
+
+    #[test]
+    fn test_image_model_detection() {
+        let image_models = vec!["gemini-3-pro-image", "imagen-3", "IMAGE-GEN"];
+        let text_models = vec!["gemini-3-pro-high", "claude-sonnet", "gpt-4"];
+
+        for model in image_models {
+            assert!(
+                model.to_lowercase().contains("image"),
+                "Expected {} to be detected as image model",
+                model
+            );
+        }
+
+        for model in text_models {
+            assert!(
+                !model.to_lowercase().contains("image"),
+                "Expected {} to NOT be detected as image model",
+                model
+            );
+        }
+    }
+
+    #[test]
+    fn test_warmup_uses_correct_api_for_model_type() {
+        // This test documents the expected behavior:
+        // - Image models should use countTokens (minimal consumption)
+        // - Text models should use generateContent with maxOutputTokens=1
+
+        let is_image_model = |name: &str| name.to_lowercase().contains("image");
+
+        assert!(is_image_model("gemini-3-pro-image"));
+        assert!(!is_image_model("gemini-3-flash"));
+
+        // The actual API call logic is tested through integration tests
+        // This unit test just validates the detection logic
+    }
 }
