@@ -7,6 +7,12 @@ use std::collections::HashMap;
 pub struct TimeRange {
     pub start: String,
     pub end: String,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 impl Default for TimeRange {
@@ -14,6 +20,7 @@ impl Default for TimeRange {
         Self {
             start: "09:00".to_string(),
             end: "12:00".to_string(),
+            enabled: true,
         }
     }
 }
@@ -48,7 +55,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub proxy: ProxyConfig,
     pub antigravity_executable: Option<String>, // [NEW] 手动指定的反重力程序路径
-    pub antigravity_args: Option<Vec<String>>, // [NEW] Antigravity 启动参数
+    pub antigravity_args: Option<Vec<String>>,  // [NEW] Antigravity 启动参数
     #[serde(default)]
     pub auto_launch: bool, // 开机自动启动
     #[serde(default)]

@@ -34,13 +34,25 @@ pub fn start_scheduler() {
 
                     // Helper to check schedules
                     let check_schedule = |day_key: &str, is_tomorrow: bool| -> bool {
-                        if let Some(ranges) = app_config.scheduled_warmup.schedules.get(day_key) {
+                        // Try specific day first, fall back to 'default' if not found
+                        let ranges = app_config
+                            .scheduled_warmup
+                            .schedules
+                            .get(day_key)
+                            .or_else(|| app_config.scheduled_warmup.schedules.get("default"));
+
+                        if let Some(ranges) = ranges {
                             for range in ranges {
+                                // Skip disabled ranges
+                                if !range.enabled {
+                                    continue;
+                                }
+
                                 if let (Ok(start), Ok(end)) =
                                     (parse_time_str(&range.start), parse_time_str(&range.end))
                                 {
                                     let mid = (start + end) / 2;
-                                    let mut trigger_min = mid - 300; // -5 hours
+                                    let trigger_min = mid - 300; // -5 hours
 
                                     // Logic:
                                     // If is_tomorrow=false (Today):
