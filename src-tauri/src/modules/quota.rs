@@ -315,50 +315,51 @@ pub async fn warm_up_all_accounts() -> Result<String, String> {
             tokio::spawn(async move {
                 let is_image = m_name.to_lowercase().contains("image");
 
-                // Use minimal request: countTokens for image models
-                if is_image {
-                    let body = serde_json::json!({
+                // Use minimal request with maxOutputTokens=1 for all models
+                let body = if is_image {
+                    // For image models, request minimal text output (not image generation)
+                    serde_json::json!({
                         "project": project_id,
                         "model": m_name,
                         "request": {
-                            "contents": [{ "role": "user", "parts": [{ "text": "." }] }]
+                            "contents": [{ "role": "user", "parts": [{ "text": "Reply with a single word: OK" }] }],
+                            "generationConfig": {
+                                "maxOutputTokens": 1,
+                                "responseModalities": ["TEXT"]
+                            }
                         }
-                    });
-
-                    let res = up.call_v1_internal("countTokens", &at, body, None).await;
-
-                    tracing::info!(
-                        "[Warmup] {} via countTokens (was {}%): {}",
-                        m_name,
-                        pct,
-                        res.is_ok()
-                    );
-                    let _ = txc.send(format!("{}: {}", m_name, res.is_ok())).await;
+                    })
                 } else {
-                    let body = serde_json::json!({
+                    serde_json::json!({
                         "project": project_id,
                         "model": m_name,
                         "request": {
                             "contents": [{ "role": "user", "parts": [{ "text": "." }] }],
                             "generationConfig": { "maxOutputTokens": 1 }
                         }
-                    });
+                    })
+                };
 
-                    let res = up
-                        .call_v1_internal("generateContent", &at, body, None)
-                        .await;
+                let res = up
+                    .call_v1_internal("generateContent", &at, body, None)
+                    .await;
 
-                    tracing::info!(
-                        "[Warmup] {} via generateContent (was {}%): {}",
-                        m_name,
-                        pct,
-                        res.is_ok()
-                    );
-                    let _ = txc.send(format!("{}: {}", m_name, res.is_ok())).await;
+                match &res {
+                    Ok(_) => tracing::info!("[Warmup] ✓ {} (was {}%)", m_name, pct),
+                    Err(e) => tracing::warn!("[Warmup] ✗ {} (was {}%): {}", m_name, pct, e),
                 }
+                let _ = txc.send(format!("{}: {}", m_name, res.is_ok())).await;
             });
         }
     }
+
+    // Schedule auto-refresh after warmup completes (5 seconds delay)
+    tokio::spawn(async {
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        tracing::info!("[Warmup] Auto-refreshing all account quotas after warmup...");
+        let _ = crate::commands::refresh_all_quotas().await;
+        tracing::info!("[Warmup] Auto-refresh completed");
+    });
 
     Ok(format!("已启动智能预热任务"))
 }
@@ -408,47 +409,50 @@ pub async fn warm_up_account(account_id: &str) -> Result<String, String> {
         tokio::spawn(async move {
             let is_image = m_name.to_lowercase().contains("image");
 
-            // Use minimal request: countTokens for image models, minimal generateContent for others
-            if is_image {
-                // For image models, use countTokens API (doesn't consume image quota)
-                let body = serde_json::json!({
+            // Use minimal request with maxOutputTokens=1 for all models
+            let body = if is_image {
+                // For image models, request minimal text output (not image generation)
+                serde_json::json!({
                     "project": project_id,
                     "model": m_name,
                     "request": {
-                        "contents": [{ "role": "user", "parts": [{ "text": "." }] }]
+                        "contents": [{ "role": "user", "parts": [{ "text": "Reply with a single word: OK" }] }],
+                        "generationConfig": {
+                            "maxOutputTokens": 1,
+                            "responseModalities": ["TEXT"]
+                        }
                     }
-                });
-
-                let _ = up.call_v1_internal("countTokens", &at, body, None).await;
-
-                tracing::info!(
-                    "[Warmup] Triggered {} via countTokens (was {}%)",
-                    m_name,
-                    pct
-                );
+                })
             } else {
                 // For text models, use minimal generateContent
-                let body = serde_json::json!({
+                serde_json::json!({
                     "project": project_id,
                     "model": m_name,
                     "request": {
                         "contents": [{ "role": "user", "parts": [{ "text": "." }] }],
                         "generationConfig": { "maxOutputTokens": 1 }
                     }
-                });
+                })
+            };
 
-                let _ = up
-                    .call_v1_internal("generateContent", &at, body, None)
-                    .await;
+            let result = up
+                .call_v1_internal("generateContent", &at, body, None)
+                .await;
 
-                tracing::info!(
-                    "[Warmup] Triggered {} via generateContent (was {}%)",
-                    m_name,
-                    pct
-                );
+            match result {
+                Ok(_) => tracing::info!("[Warmup] ✓ Triggered {} (was {}%)", m_name, pct),
+                Err(e) => tracing::warn!("[Warmup] ✗ Failed {} (was {}%): {}", m_name, pct, e),
             }
         });
     }
+
+    // Schedule auto-refresh after warmup completes (5 seconds delay)
+    tokio::spawn(async {
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        tracing::info!("[Warmup] Auto-refreshing all account quotas after warmup...");
+        let _ = crate::commands::refresh_all_quotas().await;
+        tracing::info!("[Warmup] Auto-refresh completed");
+    });
 
     Ok(format!("已启动 {} 个模型的预热任务", warmed_count))
 }
