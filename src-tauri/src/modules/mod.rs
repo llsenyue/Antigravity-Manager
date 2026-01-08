@@ -10,7 +10,7 @@ pub mod process;
 pub mod proxy_db;
 pub mod quota;
 pub mod scheduler;
-pub mod tokenpool;
+
 pub mod tray;
 
 use crate::models;
