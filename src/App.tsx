@@ -12,7 +12,7 @@ import { useConfigStore } from './stores/useConfigStore';
 import { useAccountStore } from './stores/useAccountStore';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
-import { useTokenPoolAutoConnect } from './hooks/useTokenPoolAutoConnect';
+
 
 const router = createBrowserRouter([
   {
@@ -59,8 +59,7 @@ function App() {
     }
   }, [config?.language, i18n]);
 
-  // TokenPool Auto Connect
-  useTokenPoolAutoConnect();
+
 
   // Listen for tray events
   useEffect(() => {

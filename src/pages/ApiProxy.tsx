@@ -28,7 +28,7 @@ import { AppConfig, ProxyConfig, StickySessionConfig } from '../types/config';
 import HelpTooltip from '../components/common/HelpTooltip';
 import ModalDialog from '../components/common/ModalDialog';
 import { showToast } from '../components/common/ToastContainer';
-import TokenPoolCard from '../components/proxy/TokenPoolCard';
+
 
 interface ProxyStatus {
     running: boolean;
@@ -629,8 +629,6 @@ print(response.text)`;
         <div className="h-full w-full overflow-y-auto overflow-x-hidden">
             <div className="p-5 space-y-4 max-w-7xl mx-auto">
 
-                {/* TokenPool 共享卡片 */}
-                <TokenPoolCard />
 
                 {/* 配置区 */}
                 {appConfig && (

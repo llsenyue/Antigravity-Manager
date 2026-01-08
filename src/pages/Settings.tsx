@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Github, User, MessageCircle, ExternalLink, RefreshCw, Sparkles, Cloud } from 'lucide-react';
+import { Save, Github, User, MessageCircle, ExternalLink, RefreshCw, Sparkles } from 'lucide-react';
 import { request as invoke } from '../utils/request';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useConfigStore } from '../stores/useConfigStore';
@@ -724,89 +724,7 @@ function Settings() {
                                 </div>
                             </div>
 
-                            {/* TokenPool 设置 */}
-                            <div className="p-4 bg-gray-50 dark:bg-base-200 rounded-lg border border-gray-100 dark:border-base-300">
-                                <h3 className="text-md font-semibold text-gray-900 dark:text-base-content mb-3 flex items-center gap-2">
-                                    <Cloud size={18} className="text-purple-500" />
-                                    {t('tokenpool.title') || 'TokenPool'}
-                                </h3>
-                                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                                    {t('tokenpool.settings.desc') || 'Configure automatic connection to TokenPool network'}
-                                </p>
 
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <div className="font-medium text-gray-900 dark:text-base-content">
-                                                {t('tokenpool.settings.auto_connect') || 'Auto Connect'}
-                                            </div>
-                                            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                                {t('tokenpool.settings.auto_connect_desc') || 'Automatically connect on startup and retry on failure'}
-                                            </p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                className="sr-only peer"
-                                                checked={formData.token_pool?.auto_connect ?? false}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    token_pool: {
-                                                        ...formData.token_pool,
-                                                        auto_connect: e.target.checked,
-                                                        server_url: formData.token_pool?.server_url
-                                                    }
-                                                })}
-                                            />
-                                            <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:peer-focus:ring-purple-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
-                                        </label>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                {t('tokenpool.server_url') || 'Server URL'}
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={formData.token_pool?.server_url || 'ws://127.0.0.1:8046/ws/supplier'}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    token_pool: {
-                                                        ...formData.token_pool,
-                                                        auto_connect: formData.token_pool?.auto_connect ?? false,
-                                                        server_url: e.target.value,
-                                                        retry_interval: formData.token_pool?.retry_interval ?? 10
-                                                    }
-                                                })}
-                                                placeholder="ws://api.tokenpool.io/ws/supplier"
-                                                className="w-full px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                {t('tokenpool.settings.retry_interval') || 'Retry Interval (s)'}
-                                            </label>
-                                            <input
-                                                type="number"
-                                                min="5"
-                                                max="300"
-                                                value={formData.token_pool?.retry_interval || 10}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    token_pool: {
-                                                        ...formData.token_pool,
-                                                        auto_connect: formData.token_pool?.auto_connect ?? false,
-                                                        server_url: formData.token_pool?.server_url,
-                                                        retry_interval: parseInt(e.target.value) || 10
-                                                    }
-                                                })}
-                                                className="w-full px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     )}
                     {activeTab === 'about' && (
