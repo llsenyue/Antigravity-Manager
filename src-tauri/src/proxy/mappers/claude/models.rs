@@ -99,6 +99,11 @@ pub enum ContentBlock {
         cache_control: Option<serde_json::Value>,
     },
 
+    #[serde(rename = "redacted_thinking")]
+    RedactedThinking {
+        data: String,
+    },
+
     #[serde(rename = "tool_use")]
     ToolUse {
         id: String,
@@ -130,9 +135,6 @@ pub enum ContentBlock {
         tool_use_id: String,
         content: serde_json::Value,
     },
-
-    #[serde(rename = "redacted_thinking")]
-    RedactedThinking { data: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

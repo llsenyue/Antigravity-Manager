@@ -12,6 +12,8 @@ pub struct OpenAIRequest {
     pub prompt: Option<String>,
     #[serde(default)]
     pub stream: bool,
+    #[serde(default)]
+    pub n: Option<u32>, // [NEW] 支持多候选结果数量
     #[serde(rename = "max_tokens")]
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
@@ -53,6 +55,10 @@ pub enum OpenAIContentBlock {
     ImageUrl {
         image_url: OpenAIImageUrl,
     },
+    #[serde(rename = "audio_url")]
+    AudioUrl {
+        audio_url: AudioUrlContent,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -62,11 +68,18 @@ pub struct OpenAIImageUrl {
     pub detail: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AudioUrlContent {
+    pub url: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAIMessage {
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<OpenAIContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]

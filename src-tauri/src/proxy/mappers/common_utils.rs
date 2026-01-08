@@ -61,12 +61,16 @@ pub fn resolve_request_config(
 
     // The final model to send upstream should be the MAPPED model, 
     // but if searching, we MUST ensure the model name is one the backend associates with search.
-    // Based on ref_Antigravity2Api practice, we force a stable search model for search requests.
+    // Force a stable search model for search requests.
     let mut final_model = mapped_model.trim_end_matches("-online").to_string();
     if enable_networking {
-        // If it's a thinking model (which doesn't support tools) or a Claude-style alias, 
-        // fallback to gemini-2.5-flash which is the standard workhorse for search.
-        if final_model.contains("thinking") || !final_model.starts_with("gemini-") {
+        // [FIX] Only gemini-2.5-flash supports googleSearch tool
+        // All other models (including Gemini 3 Pro, thinking models, Claude aliases) must downgrade
+        if final_model != "gemini-2.5-flash" {
+            tracing::info!(
+                "[Common-Utils] Downgrading {} to gemini-2.5-flash for web search (only gemini-2.5-flash supports googleSearch)",
+                final_model
+            );
             final_model = "gemini-2.5-flash".to_string();
         }
     }

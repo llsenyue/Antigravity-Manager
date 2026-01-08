@@ -61,7 +61,10 @@ fn build_client(
         }
     }
 
-    builder.build().map_err(|e| format!("Failed to build HTTP client: {}", e))
+    builder
+        .tcp_nodelay(true) // [FIX #307] Disable Nagle's algorithm to improve latency for small requests
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))
 }
 
 fn copy_passthrough_headers(incoming: &HeaderMap) -> HeaderMap {
@@ -170,7 +173,16 @@ pub async fn forward_anthropic_json(
     // This prevents "Extra inputs are not permitted" errors
     deep_remove_cache_control(&mut body);
 
-    let req = client.request(method, &url).headers(headers).json(&body);
+    // [FIX #307] Explicitly serialize body to Vec<u8> to ensure Content-Length is set correctly.
+    // This avoids "Transfer-Encoding: chunked" for small bodies which caused connection errors.
+    let body_bytes = serde_json::to_vec(&body).unwrap_or_default();
+    let body_len = body_bytes.len();
+    
+    tracing::debug!("Forwarding request to z.ai (len: {} bytes): {}", body_len, url);
+
+    let req = client.request(method, &url)
+        .headers(headers)
+        .body(body_bytes); // Use .body(Vec<u8>) instead of .json()
 
     let resp = match req.send().await {
         Ok(r) => r,

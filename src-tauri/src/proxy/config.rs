@@ -116,6 +116,34 @@ impl Default for ZaiConfig {
     }
 }
 
+/// 实验性功能配置 (Feature Flags)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExperimentalConfig {
+    /// 启用双层签名缓存 (Signature Cache)
+    #[serde(default = "default_true")]
+    pub enable_signature_cache: bool,
+    
+    /// 启用工具循环自动恢复 (Tool Loop Recovery)
+    #[serde(default = "default_true")]
+    pub enable_tool_loop_recovery: bool,
+    
+    /// 启用跨模型兼容性检查 (Cross-Model Checks)
+    #[serde(default = "default_true")]
+    pub enable_cross_model_checks: bool,
+}
+
+impl Default for ExperimentalConfig {
+    fn default() -> Self {
+        Self {
+            enable_signature_cache: true,
+            enable_tool_loop_recovery: true,
+            enable_cross_model_checks: true,
+        }
+    }
+}
+
+fn default_true() -> bool { true }
+
 /// 反代服务配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyConfig {
@@ -177,6 +205,10 @@ pub struct ProxyConfig {
     /// 账号调度配置 (粘性会话/限流重试)
     #[serde(default)]
     pub scheduling: crate::proxy::sticky_config::StickySessionConfig,
+
+    /// 实验性功能配置
+    #[serde(default)]
+    pub experimental: ExperimentalConfig,
 }
 
 /// 上游代理配置
@@ -205,6 +237,7 @@ impl Default for ProxyConfig {
             upstream_proxy: UpstreamProxyConfig::default(),
             zai: ZaiConfig::default(),
             scheduling: crate::proxy::sticky_config::StickySessionConfig::default(),
+            experimental: ExperimentalConfig::default(),
         }
     }
 }

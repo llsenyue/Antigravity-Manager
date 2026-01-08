@@ -468,8 +468,15 @@ function AccountRowContent({
             </td>
 
             {/* 操作列 */}
-            <td className="px-4 py-1">
-                <div className="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+            <td className={cn(
+                "px-4 py-1 sticky right-0 z-10 shadow-[-12px_0_12px_-12px_rgba(0,0,0,0.1)] dark:shadow-[-12px_0_12px_-12px_rgba(255,255,255,0.05)] text-center",
+                // 动态背景色处理
+                isCurrent
+                    ? "bg-[#f1f6ff] dark:bg-[#1e2330]" // 接近 blue-50/50 的实色
+                    : "bg-white dark:bg-base-100",
+                !isCurrent && "group-hover:bg-gray-50 dark:group-hover:bg-base-200"
+            )}>
+                <div className="flex items-center justify-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
                     <button
                         className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-lg transition-all"
                         onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
@@ -631,9 +638,9 @@ function AccountTable({
                                 />
                             </th>
                             <th className="px-4 py-1 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">{t('accounts.table.email')}</th>
-                            <th className="px-4 py-1 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[440px] whitespace-nowrap">{t('accounts.table.quota')}</th>
+                            <th className="px-4 py-1 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[440px] min-w-[360px] whitespace-nowrap">{t('accounts.table.quota')}</th>
                             <th className="px-4 py-1 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">{t('accounts.table.last_used')}</th>
-                            <th className="px-4 py-1 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">{t('accounts.table.actions')}</th>
+                            <th className="px-4 py-1 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap sticky right-0 bg-gray-50 dark:bg-base-200 z-20 shadow-[-12px_0_12px_-12px_rgba(0,0,0,0.1)] dark:shadow-[-12px_0_12px_-12px_rgba(255,255,255,0.05)] text-center">{t('accounts.table.actions')}</th>
                         </tr>
                     </thead>
                     <SortableContext items={accountIds} strategy={verticalListSortingStrategy}>

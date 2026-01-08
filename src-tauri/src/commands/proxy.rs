@@ -103,6 +103,7 @@ pub async fn start_proxy_service(
             crate::proxy::ProxySecurityConfig::from_proxy_config(&config),
             config.zai.clone(),
             monitor.clone(),
+            config.experimental.clone(),
 
         ).await {
             Ok((server, handle)) => (server, handle),

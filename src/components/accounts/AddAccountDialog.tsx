@@ -92,8 +92,8 @@ function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
                     let errorMsg = String(error);
                     if (errorMsg.includes('Refresh Token') || errorMsg.includes('refresh_token')) {
                         setMessage(errorMsg);
-                    } else if (errorMsg.includes('Tauri') || errorMsg.includes('环境')) {
-                        setMessage(`环境错误: ${errorMsg}`);
+                    } else if (errorMsg.includes('Tauri') || errorMsg.toLowerCase().includes('environment') || errorMsg.includes('环境')) {
+                        setMessage(t('common.environment_error', { error: errorMsg }));
                     } else {
                         setMessage(`${t('accounts.add.tabs.oauth')} ${t('common.error')}: ${errorMsg}`);
                     }
@@ -172,9 +172,9 @@ function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
             // 如果是 refresh_token 缺失错误,显示完整信息(包含解决方案)
             if (errorMsg.includes('Refresh Token') || errorMsg.includes('refresh_token')) {
                 setMessage(errorMsg);
-            } else if (errorMsg.includes('Tauri') || errorMsg.includes('环境')) {
+            } else if (errorMsg.includes('Tauri') || errorMsg.toLowerCase().includes('environment') || errorMsg.includes('环境')) {
                 // 环境错误
-                setMessage(`环境错误: ${errorMsg}`);
+                setMessage(t('common.environment_error', { error: errorMsg }));
             } else {
                 // 其他错误
                 setMessage(`${actionName} ${t('common.error')}: ${errorMsg}`);

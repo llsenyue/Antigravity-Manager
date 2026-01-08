@@ -25,13 +25,23 @@
         "pagination_info": "显示第 {{start}} 到 {{end}} 条，共 {{total}} 条",
         "per_page": "每页",
         "items": "条",
-        "accounts": "个账号"
+        "accounts": "个账号",
+        "enabled": "已启用",
+        "disabled": "已禁用",
+        "tauri_api_not_loaded": "Tauri API 未正确加载,请重启应用",
+        "environment_error": "环境错误: {{error}}"
     },
     "nav": {
         "dashboard": "仪表盘",
         "accounts": "账号管理",
         "proxy": "API 反代",
-        "settings": "设置"
+        "settings": "设置",
+        "theme_to_dark": "切换到深色模式",
+        "theme_to_light": "切换到浅色模式",
+        "switch_to_english": "切换到英文",
+        "switch_to_chinese": "切换到中文",
+        "switch_to_english_short": "EN",
+        "switch_to_chinese_short": "中"
     },
     "dashboard": {
         "hello": "你好, 用户 👋",
@@ -90,6 +100,10 @@
         "proxy_disabled_tooltip": "此账号已被手动禁用反代功能,不参与 API 请求,但仍可在应用中使用",
         "enable_proxy": "启用反代",
         "disable_proxy": "禁用反代",
+        "enable_proxy_selected": "启用 ({{count}})",
+        "disable_proxy_selected": "禁用 ({{count}})",
+        "proxy_disabled_reason_manual": "用户手动禁用",
+        "proxy_disabled_reason_batch": "批量禁用",
         "forbidden": "403",
         "forbidden_badge": "403",
         "forbidden_tooltip": "API 返回 403 Forbidden，账号无权使用 Gemini Code Assist",
@@ -101,6 +115,10 @@
         "actions": "操作",
         "details": {
             "title": "配额详情"
+        },
+        "toast": {
+            "proxy_enabled": "成功启用 {{count}} 个账号的反代功能",
+            "proxy_disabled": "成功禁用 {{count}} 个账号的反代功能"
         },
         "add": {
             "title": "添加新账号",
@@ -142,6 +160,7 @@
             },
             "btn_cancel": "取消",
             "btn_confirm": "确认添加",
+            "oauth_error": "OAuth 授权失败: {{error}}",
             "status": {
                 "error_token": "请填写 Refresh Token"
             }
@@ -425,7 +444,11 @@
         "example": {
             "title": "使用示例",
             "curl": "cURL",
-            "python": "Python"
+            "python": "Python",
+            "python_anthropic": "from anthropic import Anthropic\n\nclient = Anthropic(\n    # 推荐使用 127.0.0.1\n    base_url=\"{{baseUrl}}\",\n    api_key=\"{{apiKey}}\"\n)\n\n# 注意: Antigravity 支持使用 Anthropic SDK 调用任意模型\nresponse = client.messages.create(\n    model=\"{{modelId}}\",\n    max_tokens=1024,\n    messages=[{\"role\": \"user\", \"content\": \"Hello\"}]\n)\n\nprint(response.content[0].text)",
+            "python_gemini": "# 需要安装: pip install google-generativeai\nimport google.generativeai as genai\n\n# 使用 Antigravity 代理地址 (推荐 127.0.0.1)\ngenai.configure(\n    api_key=\"{{apiKey}}\",\n    transport='rest',\n    client_options={'api_endpoint': '{{rawBaseUrl}}'}\n)\n\nmodel = genai.GenerativeModel('{{modelId}}')\nresponse = model.generate_content(\"Hello\")\nprint(response.text)",
+            "python_openai_image": "from openai import OpenAI\n\nclient = OpenAI(\n    base_url=\"{{baseUrl}}\",\n    api_key=\"{{apiKey}}\"\n)\n\nresponse = client.chat.completions.create(\n    model=\"{{modelId}}\",\n    # 方式 1: 使用 size 参数 (推荐)\n    # 支持: \"1024x1024\" (1:1), \"1280x720\" (16:9), \"720x1280\" (9:16), \"1216x896\" (4:3)\n    extra_body={ \"size\": \"1024x1024\" },\n\n    # 方式 2: 使用模型后缀\n    # 例如: gemini-3-pro-image-16-9, gemini-3-pro-image-4-3\n    # model=\"gemini-3-pro-image-16-9\",\n    messages=[{\n        \"role\": \"user\",\n        \"content\": \"画一个未来城市\"\n    }]\n)\n\nprint(response.choices[0].message.content)",
+            "python_openai": "from openai import OpenAI\n\nclient = OpenAI(\n    base_url=\"{{baseUrl}}\",\n    api_key=\"{{apiKey}}\"\n)\n\nresponse = client.chat.completions.create(\n    model=\"{{modelId}}\",\n    messages=[{\"role\": \"user\", \"content\": \"Hello\"}]\n)\n\nprint(response.choices[0].message.content)"
         },
         "dialog": {
             "confirm_regenerate": "确定要生成新的 API Key 吗？旧的 Key 将立即失效。",
@@ -482,6 +505,10 @@
             "original_id": "原始模型 ID",
             "route_to": "路由目标",
             "group_title": "模型家族分组 (Series Groups)",
+            "gemini3_group_label": "Gemini 3 (推荐)",
+            "gemini3_option_high": "gemini-3-pro-high (高质量)",
+            "gemini3_option_low": "gemini-3-pro-low (均衡)",
+            "gemini3_option_flash": "gemini-3-flash (快速)",
             "groups": {
                 "claude_45": {
                     "name": "Claude 4.5 系列",
@@ -506,6 +533,10 @@
             },
             "expert_title": "专家精确映射 (Expert Custom Routing)",
             "expert_subtitle": "精确匹配支持从任何协议传来的原始模型 ID。",
+            "haiku_tip_title": "💰 省钱提示:",
+            "haiku_tip_body_before": "Claude CLI 默认使用",
+            "haiku_tip_body_after": "处理后台任务,建议映射到廉价 Flash 模型可节省约 95% 成本",
+            "haiku_tip_action": "一键优化",
             "reset_confirm": "确定要重置所有模型映射为系统默认吗？",
             "reset_mapping": "重置映射",
             "add_mapping": "添加映射 (Add Mapping)",

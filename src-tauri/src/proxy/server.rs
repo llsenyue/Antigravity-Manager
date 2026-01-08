@@ -6,12 +6,12 @@ use axum::{
     routing::{any, get, post},
     Router,
 };
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error};
+use tokio::sync::RwLock;
+use std::sync::atomic::AtomicUsize;
 
 /// Axum 应用状态
 #[derive(Clone)]
@@ -31,6 +31,7 @@ pub struct AppState {
     pub provider_rr: Arc<AtomicUsize>,
     pub zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
     pub monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
+    pub experimental: Arc<RwLock<crate::proxy::config::ExperimentalConfig>>,
 }
 
 /// Axum 服务器实例
@@ -92,22 +93,26 @@ impl AxumServer {
         security_config: crate::proxy::ProxySecurityConfig,
         zai_config: crate::proxy::ZaiConfig,
         monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
+        experimental_config: crate::proxy::config::ExperimentalConfig,
+
     ) -> Result<(Self, tokio::task::JoinHandle<()>), String> {
         let mapping_state = Arc::new(tokio::sync::RwLock::new(anthropic_mapping));
         let openai_mapping_state = Arc::new(tokio::sync::RwLock::new(openai_mapping));
         let custom_mapping_state = Arc::new(tokio::sync::RwLock::new(custom_mapping));
-        let proxy_state = Arc::new(tokio::sync::RwLock::new(upstream_proxy.clone()));
-        let security_state = Arc::new(RwLock::new(security_config));
-        let zai_state = Arc::new(RwLock::new(zai_config));
-        let provider_rr = Arc::new(AtomicUsize::new(0));
-        let zai_vision_mcp_state = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
+	        let proxy_state = Arc::new(tokio::sync::RwLock::new(upstream_proxy.clone()));
+	        let security_state = Arc::new(RwLock::new(security_config));
+	        let zai_state = Arc::new(RwLock::new(zai_config));
+	        let provider_rr = Arc::new(AtomicUsize::new(0));
+	        let zai_vision_mcp_state =
+	            Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
+	        let experimental_state = Arc::new(RwLock::new(experimental_config));
 
-        let state = AppState {
-            token_manager: token_manager.clone(),
-            anthropic_mapping: mapping_state.clone(),
-            openai_mapping: openai_mapping_state.clone(),
-            custom_mapping: custom_mapping_state.clone(),
-            request_timeout: 300, // 5分钟超时
+	        let state = AppState {
+	            token_manager: token_manager.clone(),
+	            anthropic_mapping: mapping_state.clone(),
+	            openai_mapping: openai_mapping_state.clone(),
+	            custom_mapping: custom_mapping_state.clone(),
+	            request_timeout: 300, // 5分钟超时
             thought_signature_map: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -119,7 +124,9 @@ impl AxumServer {
             provider_rr: provider_rr.clone(),
             zai_vision_mcp: zai_vision_mcp_state,
             monitor: monitor.clone(),
+            experimental: experimental_state,
         };
+
 
         // 构建路由 - 使用新架构的 handlers！
         use crate::proxy::handlers;
@@ -144,6 +151,10 @@ impl AxumServer {
                 "/v1/images/edits",
                 post(handlers::openai::handle_images_edits),
             ) // 图像编辑 API
+            .route(
+                "/v1/audio/transcriptions",
+                post(handlers::audio::handle_audio_transcription),
+            ) // 音频转录 API (PR #311)
             // Claude Protocol
             .route("/v1/messages", post(handlers::claude::handle_messages))
             .route(
@@ -159,13 +170,16 @@ impl AxumServer {
                 "/mcp/web_search_prime/mcp",
                 any(handlers::mcp::handle_web_search_prime),
             )
-            .route("/mcp/web_reader/mcp", any(handlers::mcp::handle_web_reader))
-            .route(
-                "/mcp/zai-mcp-server/mcp",
-                any(handlers::mcp::handle_zai_mcp_server),
-            )
-            // Gemini Protocol (Native)
-            .route("/v1beta/models", get(handlers::gemini::handle_list_models))
+	            .route(
+	                "/mcp/web_reader/mcp",
+	                any(handlers::mcp::handle_web_reader),
+	            )
+	            .route(
+	                "/mcp/zai-mcp-server/mcp",
+	                any(handlers::mcp::handle_zai_mcp_server),
+	            )
+	            // Gemini Protocol (Native)
+	            .route("/v1beta/models", get(handlers::gemini::handle_list_models))
             // Handle both GET (get info) and POST (generateContent with colon) at the same route
             .route(
                 "/v1beta/models/:model",
@@ -175,18 +189,12 @@ impl AxumServer {
                 "/v1beta/models/:model/countTokens",
                 post(handlers::gemini::handle_count_tokens),
             ) // Specific route priority
-            .route(
-                "/v1/models/detect",
-                post(handlers::common::handle_detect_model),
-            )
+            .route("/v1/models/detect", post(handlers::common::handle_detect_model))
             .route("/v1/api/event_logging/batch", post(silent_ok_handler))
             .route("/v1/api/event_logging", post(silent_ok_handler))
             .route("/healthz", get(health_check_handler))
             .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
-            .layer(axum::middleware::from_fn_with_state(
-                state.clone(),
-                crate::proxy::middleware::monitor::monitor_middleware,
-            ))
+            .layer(axum::middleware::from_fn_with_state(state.clone(), crate::proxy::middleware::monitor::monitor_middleware))
             .layer(TraceLayer::new_for_http())
             .layer(axum::middleware::from_fn_with_state(
                 security_state.clone(),
@@ -195,44 +203,11 @@ impl AxumServer {
             .layer(crate::proxy::middleware::cors_layer())
             .with_state(state);
 
-        // 绑定地址 - 使用 socket2 设置 SO_REUSEADDR 允许端口立即重用
+        // 绑定地址
         let addr = format!("{}:{}", host, port);
-        let socket_addr: std::net::SocketAddr =
-            addr.parse().map_err(|e| format!("地址解析失败: {}", e))?;
-
-        // 创建 socket 并设置 SO_REUSEADDR
-        let socket = socket2::Socket::new(
-            socket2::Domain::IPV4,
-            socket2::Type::STREAM,
-            Some(socket2::Protocol::TCP),
-        )
-        .map_err(|e| format!("创建 socket 失败: {}", e))?;
-
-        socket
-            .set_reuse_address(true)
-            .map_err(|e| format!("设置 SO_REUSEADDR 失败: {}", e))?;
-
-        // 设置 linger 为 0，强制关闭时立即释放端口
-        socket
-            .set_linger(Some(std::time::Duration::from_secs(0)))
-            .ok();
-
-        #[cfg(unix)]
-        socket.set_reuse_port(true).ok(); // Unix 特有选项，忽略错误
-
-        socket
-            .bind(&socket_addr.into())
-            .map_err(|_| format!("地址 {} 绑定失败: 以一种访问权限不允许的方式做了一个访问套接字的尝试。(os error 10013)", addr))?;
-
-        socket.listen(128).map_err(|e| format!("监听失败: {}", e))?;
-
-        // 转换为 tokio TcpListener
-        socket
-            .set_nonblocking(true)
-            .map_err(|e| format!("设置非阻塞失败: {}", e))?;
-        let std_listener: std::net::TcpListener = socket.into();
-        let listener = tokio::net::TcpListener::from_std(std_listener)
-            .map_err(|e| format!("转换为 tokio TcpListener 失败: {}", e))?;
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .await
+            .map_err(|e| format!("地址 {} 绑定失败: {}", addr, e))?;
 
         tracing::info!("反代服务器启动在 http://{}", addr);
 

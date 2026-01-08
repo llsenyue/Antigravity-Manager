@@ -74,6 +74,76 @@ pub fn init_logger() {
     std::mem::forget(_guard);
     
     info!("日志系统已完成初始化 (终端控制台 + 文件持久化)");
+    
+    // 自动清理 7 天前的旧日志
+    if let Err(e) = cleanup_old_logs(7) {
+        warn!("清理旧日志失败: {}", e);
+    }
+}
+
+/// 清理指定天数之前的旧日志文件
+pub fn cleanup_old_logs(days_to_keep: u64) -> Result<(), String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    
+    let log_dir = get_log_dir()?;
+    if !log_dir.exists() {
+        return Ok(());
+    }
+    
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("获取系统时间失败: {}", e))?
+        .as_secs();
+    
+    let cutoff_time = now.saturating_sub(days_to_keep * 24 * 60 * 60);
+    let mut deleted_count = 0;
+    let mut total_size_freed = 0u64;
+    
+    let entries = fs::read_dir(&log_dir)
+        .map_err(|e| format!("读取日志目录失败: {}", e))?;
+    
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            
+            // 只处理文件，跳过目录
+            if !path.is_file() {
+                continue;
+            }
+            
+            // 获取文件修改时间
+            if let Ok(metadata) = fs::metadata(&path) {
+                if let Ok(modified) = metadata.modified() {
+                    let modified_secs = modified
+                        .duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    
+                    // 如果文件早于截止时间，删除它
+                    if modified_secs < cutoff_time {
+                        let file_size = metadata.len();
+                        if let Err(e) = fs::remove_file(&path) {
+                            warn!("删除旧日志文件失败 {:?}: {}", path, e);
+                        } else {
+                            deleted_count += 1;
+                            total_size_freed += file_size;
+                            info!("已删除旧日志文件: {:?}", path.file_name());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if deleted_count > 0 {
+        let size_mb = total_size_freed as f64 / 1024.0 / 1024.0;
+        info!(
+            "日志清理完成: 删除了 {} 个文件，释放 {:.2} MB 空间",
+            deleted_count, size_mb
+        );
+    }
+    
+    Ok(())
 }
 
 /// 清理日志缓存 (采用截断模式以保持文件句柄有效)

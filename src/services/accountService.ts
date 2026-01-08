@@ -1,3 +1,4 @@
+import i18n from '../i18n';
 import { request as invoke } from '../utils/request';
 import { Account, QuotaData } from '../types/account';
 
@@ -6,7 +7,7 @@ function ensureTauriEnvironment() {
     // 只检查 invoke 函数是否可用
     // 不检查 __TAURI__ 对象,因为在某些 Tauri 版本中可能不存在
     if (typeof invoke !== 'function') {
-        throw new Error('Tauri API 未正确加载,请重启应用');
+        throw new Error(i18n.t('common.tauri_api_not_loaded'));
     }
 }
 
@@ -71,7 +72,7 @@ export async function startOAuthLogin(): Promise<Account> {
                 throw error;
             }
             // 其他错误添加上下文
-            throw `OAuth 授权失败: ${error}`;
+            throw i18n.t('accounts.add.oauth_error', { error });
         }
         throw error;
     }
@@ -86,7 +87,7 @@ export async function completeOAuthLogin(): Promise<Account> {
             if (error.includes('Refresh Token') || error.includes('refresh_token')) {
                 throw error;
             }
-            throw `OAuth 授权失败: ${error}`;
+            throw i18n.t('accounts.add.oauth_error', { error });
         }
         throw error;
     }

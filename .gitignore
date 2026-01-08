@@ -12,6 +12,7 @@ node_modules
 dist
 dist-ssr
 *.local
+.vite
 
 # Editor directories and files
 .vscode/*
@@ -33,3 +34,6 @@ src-tauri/.env
 .env
 .env.*
 environment/
+
+# Reference projects (for development only)
+

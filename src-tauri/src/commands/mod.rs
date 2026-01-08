@@ -203,54 +203,91 @@ pub struct RefreshStats {
 /// 刷新所有账号配额
 #[tauri::command]
 pub async fn refresh_all_quotas() -> Result<RefreshStats, String> {
-    modules::logger::log_info("开始批量刷新所有账号配额");
+    use futures::future::join_all;
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
+
+    const MAX_CONCURRENT: usize = 5;
+    let start = std::time::Instant::now();
+
+    modules::logger::log_info(&format!(
+        "开始批量刷新所有账号配额 (并发模式, 最大并发: {})",
+        MAX_CONCURRENT
+    ));
     let accounts = modules::list_accounts()?;
+
+    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT));
+
+    let tasks: Vec<_> = accounts
+        .into_iter()
+        .filter(|account| {
+            if account.disabled {
+                modules::logger::log_info(&format!("  - Skipping {} (Disabled)", account.email));
+                return false;
+            }
+            if let Some(ref q) = account.quota {
+                if q.is_forbidden {
+                    modules::logger::log_info(&format!("  - Skipping {} (Forbidden)", account.email));
+                    return false;
+                }
+            }
+            true
+        })
+        .map(|mut account| {
+            let email = account.email.clone();
+            let account_id = account.id.clone();
+            let permit = semaphore.clone();
+            async move {
+                let _guard = permit.acquire().await.unwrap();
+                modules::logger::log_info(&format!("  - Processing {}", email));
+                match modules::account::fetch_quota_with_retry(&mut account).await {
+                    Ok(quota) => {
+                        if let Err(e) = modules::update_account_quota(&account_id, quota) {
+                            let msg = format!("Account {}: Save quota failed - {}", email, e);
+                            modules::logger::log_error(&msg);
+                            Err(msg)
+                        } else {
+                            modules::logger::log_info(&format!("    ✅ {} Success", email));
+                            Ok(())
+                        }
+                    }
+                    Err(e) => {
+                        let msg = format!("Account {}: Fetch quota failed - {}", email, e);
+                        modules::logger::log_error(&msg);
+                        Err(msg)
+                    }
+                }
+            }
+        })
+        .collect();
+
+    let total = tasks.len();
+    let results = join_all(tasks).await;
 
     let mut success = 0;
     let mut failed = 0;
     let mut details = Vec::new();
 
-    // 串行处理以确保持久化安全 (SQLite)
-    for mut account in accounts {
-        if account.disabled {
-            modules::logger::log_info(&format!("  - Skipping {} (Disabled)", account.email));
-            continue;
-        }
-        if let Some(ref q) = account.quota {
-            if q.is_forbidden {
-                modules::logger::log_info(&format!("  - Skipping {} (Forbidden)", account.email));
-                continue;
-            }
-        }
-
-        modules::logger::log_info(&format!("  - Processing {}", account.email));
-
-        match modules::account::fetch_quota_with_retry(&mut account).await {
-            Ok(quota) => {
-                // 保存配额
-                if let Err(e) = modules::update_account_quota(&account.id, quota) {
-                    failed += 1;
-                    let msg = format!("Account {}: Save quota failed - {}", account.email, e);
-                    details.push(msg.clone());
-                    modules::logger::log_error(&msg);
-                } else {
-                    success += 1;
-                    modules::logger::log_info("    ✅ Success");
-                }
-            }
-            Err(e) => {
+    for result in results {
+        match result {
+            Ok(()) => success += 1,
+            Err(msg) => {
                 failed += 1;
-                // e might be AppError, assume it implements Display
-                let msg = format!("Account {}: Fetch quota failed - {}", account.email, e);
-                details.push(msg.clone());
-                modules::logger::log_error(&msg);
+                details.push(msg);
             }
         }
     }
 
-    modules::logger::log_info(&format!("批量刷新完成: {} 成功, {} 失败", success, failed));
+    let elapsed = start.elapsed();
+    modules::logger::log_info(&format!(
+        "批量刷新完成: {} 成功, {} 失败, 耗时: {}ms",
+        success,
+        failed,
+        elapsed.as_millis()
+    ));
+
     Ok(RefreshStats {
-        total: success + failed,
+        total,
         success,
         failed,
         details,

@@ -6,11 +6,13 @@ pub mod request;
 pub mod response;
 pub mod streaming;
 pub mod utils;
+pub mod thinking_utils;
 
 pub use models::*;
 pub use request::transform_claude_request_in;
 pub use response::transform_response;
 pub use streaming::{PartProcessor, StreamingState};
+pub use thinking_utils::close_tool_loop_for_thinking;
 
 use bytes::Bytes;
 use futures::Stream;
@@ -137,6 +139,11 @@ fn process_sse_line(line: &str, state: &mut StreamingState, trace_id: &str, emai
     }
 
     // Process grounding metadata (googleSearch results) and append as citations
+    // [DISABLED] Temporarily disabled to fix Cherry Studio compatibility
+    // Cherry Studio doesn't recognize "web_search_tool_result" type, causing validation errors
+    // Search results are still displayed via Markdown text block in streaming.rs (lines 341-381)
+    // TODO: Research Antigravity2Api implementation for correct type mapping
+    /*
     if let Some(grounding) = raw_json
         .get("candidates")
         .and_then(|c| c.get(0))
@@ -146,6 +153,7 @@ fn process_sse_line(line: &str, state: &mut StreamingState, trace_id: &str, emai
             chunks.extend(citation_chunks);
         }
     }
+    */
 
     // 检查是否结束
     if let Some(finish_reason) = raw_json
