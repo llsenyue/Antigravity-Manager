@@ -590,5 +590,37 @@
             "clear_title": "清除监控日志",
             "clear_msg": "确定要清除所有监控记录吗？此操作无法撤销。"
         }
+    },
+    "tokenpool": {
+        "title": "TokenPool 共享",
+        "settings": {
+            "desc": "接入 TokenPool 共享闲置配额以获取收益",
+            "auto_connect": "自动连接",
+            "auto_connect_desc": "启动时自动尝试连接，失败时自动重试",
+            "retry_interval": "重试间隔 (秒)",
+            "retry_interval_desc": "连接失败后的重试等待时间"
+        },
+        "description": "共享闲置配额，赚取奖励",
+        "server_url": "服务器地址",
+        "stats": "统计信息",
+        "supplier_id": "供应商 ID",
+        "status": {
+            "label": "状态",
+            "connected": "已连接",
+            "disconnected": "未连接",
+            "connecting": "连接中...",
+            "sharing": "正在共享配额..."
+        },
+        "action": {
+            "connect": "连接",
+            "disconnect": "断开"
+        },
+        "hint": {
+            "1": "您的 OAuth Token 永远不会离开本机",
+            "2": "请求通过本地反代转发",
+            "3": "每处理一个 API 调用即可获得奖励"
+        },
+        "connected": "已连接到 TokenPool",
+        "disconnected": "已断开 TokenPool 连接"
     }
 }

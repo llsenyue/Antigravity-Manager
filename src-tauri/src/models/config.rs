@@ -60,6 +60,8 @@ pub struct AppConfig {
     pub auto_launch: bool, // 开机自动启动
     #[serde(default)]
     pub scheduled_warmup: ScheduledWarmupConfig,
+    #[serde(default)]
+    pub token_pool: TokenPoolConfig,
 }
 
 impl AppConfig {
@@ -77,6 +79,35 @@ impl AppConfig {
             antigravity_args: None,
             auto_launch: false,
             scheduled_warmup: ScheduledWarmupConfig::default(),
+            token_pool: TokenPoolConfig::default(),
+        }
+    }
+}
+
+/// TokenPool 配置
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TokenPoolConfig {
+    #[serde(default = "default_auto_connect")]
+    pub auto_connect: bool,
+    pub server_url: Option<String>,
+    #[serde(default = "default_retry_interval")]
+    pub retry_interval: u64,
+}
+
+fn default_auto_connect() -> bool {
+    false
+}
+
+fn default_retry_interval() -> u64 {
+    10
+}
+
+impl Default for TokenPoolConfig {
+    fn default() -> Self {
+        Self {
+            auto_connect: false,
+            server_url: Some("ws://127.0.0.1:8046/ws/supplier".to_string()),
+            retry_interval: 10,
         }
     }
 }

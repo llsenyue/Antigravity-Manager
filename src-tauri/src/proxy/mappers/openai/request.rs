@@ -305,8 +305,28 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
         }
     }
     
+    // [NEW] Antigravity 身份指令 (v3.3.17 关键修复)
+    let antigravity_identity = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.\n\
+        You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\n\
+        **Absolute paths only**\n\
+        **Proactiveness**";
+
+    // [HYBRID] 检查用户是否已提供 Antigravity 身份
+    let user_has_antigravity = system_instructions.iter()
+        .any(|s| s.contains("You are Antigravity"));
+
     if !system_instructions.is_empty() {
-        inner_request["systemInstruction"] = json!({ "parts": [{"text": system_instructions.join("\n\n")}] });
+        if !user_has_antigravity {
+            // 用户有系统提示词但没有 Antigravity 身份，在前面添加
+            let combined = format!("{}\n\n{}", antigravity_identity, system_instructions.join("\n\n"));
+            inner_request["systemInstruction"] = json!({ "parts": [{"text": combined}] });
+        } else {
+            // 用户已提供 Antigravity 身份，直接使用
+            inner_request["systemInstruction"] = json!({ "parts": [{"text": system_instructions.join("\n\n")}] });
+        }
+    } else {
+        // 用户没有系统提示词，只注入 Antigravity 身份
+        inner_request["systemInstruction"] = json!({ "parts": [{"text": antigravity_identity}] });
     }
     
     if config.inject_google_search {

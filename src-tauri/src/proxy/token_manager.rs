@@ -182,6 +182,16 @@ impl TokenManager {
     /// 参数 `force_rotate` 为 true 时将忽略锁定，强制切换账号
     /// 参数 `session_id` 用于跨请求维持会话粘性
     pub async fn get_token(&self, quota_group: &str, force_rotate: bool, session_id: Option<&str>) -> Result<(String, String, String), String> {
+        // 【优化 Issue #284】添加 5 秒超时，防止死锁
+        let timeout_duration = std::time::Duration::from_secs(5);
+        match tokio::time::timeout(timeout_duration, self.get_token_internal(quota_group, force_rotate, session_id)).await {
+            Ok(result) => result,
+            Err(_) => Err("Token acquisition timeout (5s) - system too busy or deadlock detected".to_string()),
+        }
+    }
+
+    /// 内部实现：获取 Token 的核心逻辑
+    async fn get_token_internal(&self, quota_group: &str, force_rotate: bool, session_id: Option<&str>) -> Result<(String, String, String), String> {
         let mut tokens_snapshot: Vec<ProxyToken> = self.tokens.iter().map(|e| e.value().clone()).collect();
         let total = tokens_snapshot.len();
         if total == 0 {
@@ -204,8 +214,18 @@ impl TokenManager {
         let scheduling = self.sticky_config.read().await.clone();
         use crate::proxy::sticky_config::SchedulingMode;
 
+        // 【优化 Issue #284】将锁操作移到循环外，避免重复获取锁
+        // 预先获取 last_used_account 的快照，避免在循环中多次加锁
+        let last_used_account_id = if quota_group != "image_gen" {
+            let last_used = self.last_used_account.lock().await;
+            last_used.clone()
+        } else {
+            None
+        };
+
         let mut attempted: HashSet<String> = HashSet::new();
         let mut last_error: Option<String> = None;
+        let mut need_update_last_used: Option<(String, std::time::Instant)> = None;
 
         for attempt in 0..total {
             let rotate = force_rotate || attempt > 0;
@@ -222,21 +242,10 @@ impl TokenManager {
                     // 2. 检查绑定的账号是否限流 (使用精准的剩余时间接口)
                     let reset_sec = self.rate_limit_tracker.get_remaining_wait(&bound_id);
                     if reset_sec > 0 {
-                        if scheduling.mode == SchedulingMode::CacheFirst && reset_sec <= scheduling.max_wait_seconds {
-                            // 缓存优先模式：限流时间短，执行精准精准避让等待
-                            tracing::warn!("Cache-first: Session {} bound to {} is limited. Executing precise wait for {}s to preserve cache...", sid, bound_id, reset_sec);
-                            tokio::time::sleep(std::time::Duration::from_secs(reset_sec)).await;
-                            
-                            // 等待后若账号可用，优先复用
-                            if let Some(found) = tokens_snapshot.iter().find(|t| t.account_id == bound_id) {
-                                tracing::debug!("Sticky Session: Successfully recovered and reusing bound account {} for session {}", found.email, sid);
-                                target_token = Some(found.clone());
-                            }
-                        } else {
-                            // 平衡模式或等待时间过长：断开绑定，准备换号
-                            tracing::warn!("Avoidance/WaitTimeout: Session {} switching from {} (remaining wait: {}s > limit: {}s).", sid, bound_id, reset_sec, scheduling.max_wait_seconds);
-                            self.session_accounts.remove(sid);
-                        }
+                        // 【修复 Issue #284】立即解绑并切换账号，不再阻塞等待
+                        // 原因：阻塞等待会导致并发请求时客户端 socket 超时 (UND_ERR_SOCKET)
+                        tracing::warn!("Session {} bound account {} is rate-limited ({}s remaining). Unbinding and switching to next available account.", sid, bound_id, reset_sec);
+                        self.session_accounts.remove(sid);
                     } else if !attempted.contains(&bound_id) {
                         // 3. 账号可用且未被标记为尝试失败，优先复用
                         if let Some(found) = tokens_snapshot.iter().find(|t| t.account_id == bound_id) {
@@ -249,10 +258,8 @@ impl TokenManager {
 
             // 模式 B: 原子化 60s 全局锁定 (针对无 session_id 情况的默认保护)
             if target_token.is_none() && !rotate && quota_group != "image_gen" {
-                let mut last_used = self.last_used_account.lock().await;
-                
-                // 尝试复用全局锁定账号
-                if let Some((account_id, last_time)) = &*last_used {
+                // 【优化】使用预先获取的快照，不再在循环内加锁
+                if let Some((account_id, last_time)) = &last_used_account_id {
                     if last_time.elapsed().as_secs() < 60 && !attempted.contains(account_id) {
                         if let Some(found) = tokens_snapshot.iter().find(|t| &t.account_id == account_id) {
                             tracing::debug!("60s Window: Force reusing last account: {}", found.email);
@@ -277,7 +284,8 @@ impl TokenManager {
                         }
 
                         target_token = Some(candidate.clone());
-                        *last_used = Some((candidate.account_id.clone(), std::time::Instant::now()));
+                        // 【优化】标记需要更新，稍后统一写回
+                        need_update_last_used = Some((candidate.account_id.clone(), std::time::Instant::now()));
                         
                         // 如果是会话首次分配且需要粘性，在此建立绑定
                         if let Some(sid) = session_id {
@@ -370,11 +378,10 @@ impl TokenManager {
                         last_error = Some(format!("Token refresh failed: {}", e));
                         attempted.insert(token.account_id.clone());
 
-                        // 如果当前账号被锁定复用，刷新失败后必须解除锁定，避免下一次仍选中同一账号
+                        // 【优化】标记需要清除锁定，避免在循环内加锁
                         if quota_group != "image_gen" {
-                            let mut last_used = self.last_used_account.lock().await;
-                            if matches!(&*last_used, Some((id, _)) if id == &token.account_id) {
-                                *last_used = None;
+                            if matches!(&last_used_account_id, Some((id, _)) if id == &token.account_id) {
+                                need_update_last_used = Some((String::new(), std::time::Instant::now())); // 空字符串表示需要清除
                             }
                         }
                         continue;
@@ -400,16 +407,29 @@ impl TokenManager {
                         last_error = Some(format!("Failed to fetch project_id for {}: {}", token.email, e));
                         attempted.insert(token.account_id.clone());
 
+                        // 【优化】标记需要清除锁定，避免在循环内加锁
                         if quota_group != "image_gen" {
-                            let mut last_used = self.last_used_account.lock().await;
-                            if matches!(&*last_used, Some((id, _)) if id == &token.account_id) {
-                                *last_used = None;
+                            if matches!(&last_used_account_id, Some((id, _)) if id == &token.account_id) {
+                                need_update_last_used = Some((String::new(), std::time::Instant::now())); // 空字符串表示需要清除
                             }
                         }
                         continue;
                     }
                 }
             };
+
+            // 【优化】在成功返回前，统一更新 last_used_account（如果需要）
+            if let Some((new_account_id, new_time)) = need_update_last_used {
+                if quota_group != "image_gen" {
+                    let mut last_used = self.last_used_account.lock().await;
+                    if new_account_id.is_empty() {
+                        // 空字符串表示需要清除锁定
+                        *last_used = None;
+                    } else {
+                        *last_used = Some((new_account_id, new_time));
+                    }
+                }
+            }
 
             return Ok((token.access_token, project_id, token.email));
         }

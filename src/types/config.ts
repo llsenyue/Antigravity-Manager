@@ -77,4 +77,11 @@ export interface AppConfig {
     accounts_page_size?: number; // 账号列表每页显示数量,默认 0 表示自动计算
     proxy: ProxyConfig;
     scheduled_warmup?: ScheduledWarmupConfig;
+    token_pool?: TokenPoolConfig;
+}
+
+export interface TokenPoolConfig {
+    auto_connect: boolean;
+    server_url?: string;
+    retry_interval?: number;
 }

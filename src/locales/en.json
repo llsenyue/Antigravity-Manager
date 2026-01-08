@@ -578,5 +578,37 @@
             "clear_title": "Clear Proxy Logs",
             "clear_msg": "Are you sure you want to clear all proxy logs? This action cannot be undone."
         }
+    },
+    "tokenpool": {
+        "title": "TokenPool Share",
+        "settings": {
+            "desc": "Join TokenPool to share idle quota for earnings",
+            "auto_connect": "Auto Connect",
+            "auto_connect_desc": "Automatically connect on startup and retry on failure",
+            "retry_interval": "Retry Interval (sec)",
+            "retry_interval_desc": "Wait time before retrying after connection failure"
+        },
+        "description": "Share your idle quota to earn rewards",
+        "server_url": "Server URL",
+        "stats": "Statistics",
+        "supplier_id": "Supplier ID",
+        "status": {
+            "label": "Status",
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "connecting": "Connecting...",
+            "sharing": "Sharing quota..."
+        },
+        "action": {
+            "connect": "Connect",
+            "disconnect": "Disconnect"
+        },
+        "hint": {
+            "1": "Your OAuth token never leaves your device",
+            "2": "Requests are forwarded through your local proxy",
+            "3": "Earn rewards for every API call processed"
+        },
+        "connected": "Connected to TokenPool",
+        "disconnected": "Disconnected from TokenPool"
     }
 }

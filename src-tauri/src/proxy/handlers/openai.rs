@@ -48,7 +48,8 @@ pub async fn handle_chat_completions(
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
     let pool_size = token_manager.len();
-    let max_attempts = MAX_RETRY_ATTEMPTS.min(pool_size).max(1);
+    // [FIX] 确保所有账号都能被轮询尝试
+    let max_attempts = pool_size.max(1);
 
     let mut last_error = String::new();
 
@@ -59,7 +60,7 @@ pub async fn handle_chat_completions(
             &*state.custom_mapping.read().await,
             &*state.openai_mapping.read().await,
             &*state.anthropic_mapping.read().await,
-            false,  // OpenAI 请求不应用 Claude 家族映射
+            false, // OpenAI 请求不应用 Claude 家族映射
         );
         // 将 OpenAI 工具转为 Value 数组以便探测联网
         let tools_val: Option<Vec<Value>> = openai_req
@@ -145,6 +146,7 @@ pub async fn handle_chat_completions(
                     .header("Cache-Control", "no-cache")
                     .header("Connection", "keep-alive")
                     .header("X-Account-Email", &email)
+                    .header("X-Mapped-Model", &mapped_model)
                     .body(body)
                     .unwrap()
                     .into_response());
@@ -160,6 +162,7 @@ pub async fn handle_chat_completions(
             return Ok(Response::builder()
                 .header("Content-Type", "application/json")
                 .header("X-Account-Email", &email)
+                .header("X-Mapped-Model", &mapped_model)
                 .body(Body::from(json_body))
                 .unwrap()
                 .into_response());
@@ -540,7 +543,8 @@ pub async fn handle_completions(
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
     let pool_size = token_manager.len();
-    let max_attempts = MAX_RETRY_ATTEMPTS.min(pool_size).max(1);
+    // [FIX] 确保所有账号都能被轮询尝试
+    let max_attempts = pool_size.max(1);
 
     let mut last_error = String::new();
 
@@ -550,7 +554,7 @@ pub async fn handle_completions(
             &*state.custom_mapping.read().await,
             &*state.openai_mapping.read().await,
             &*state.anthropic_mapping.read().await,
-            false,  // OpenAI 请求不应用 Claude 家族映射
+            false, // OpenAI 请求不应用 Claude 家族映射
         );
         // 将 OpenAI 工具转为 Value 数组以便探测联网
         let tools_val: Option<Vec<Value>> = openai_req
@@ -628,6 +632,7 @@ pub async fn handle_completions(
                     .header("Cache-Control", "no-cache")
                     .header("Connection", "keep-alive")
                     .header("X-Account-Email", &email)
+                    .header("X-Mapped-Model", &mapped_model)
                     .body(body)
                     .unwrap()
                     .into_response());
@@ -665,6 +670,7 @@ pub async fn handle_completions(
             return Ok(Response::builder()
                 .header("Content-Type", "application/json")
                 .header("X-Account-Email", &email)
+                .header("X-Mapped-Model", &mapped_model)
                 .body(Body::from(json_body))
                 .unwrap()
                 .into_response());

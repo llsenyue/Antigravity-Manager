@@ -137,8 +137,8 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
         return Array.from(accounts).sort();
     }, [logs]);
 
-    // 筛选函数 - 不使用 useMemo，直接计算
-    const getFilteredLogs = (): ProxyRequestLog[] => {
+    // 筛选函数 - 使用 useMemo 确保响应式更新
+    const filteredLogs = useMemo(() => {
         let result = [...logs];
 
         // Apply account filter (if any accounts are selected)
@@ -191,10 +191,7 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
         }
 
         return result.sort((a, b) => b.timestamp - a.timestamp);
-    };
-
-    // 直接调用函数获取筛选结果
-    const filteredLogs = getFilteredLogs();
+    }, [logs, filter, selectedAccounts]);
 
     // Quick filter definitions with special matching logic
     // 'chat' matches any chat-related endpoints
@@ -392,10 +389,15 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
                             <tr key={log.id} className="hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer" onClick={() => setSelectedLog(log)}>
                                 <td><span className={`badge badge-xs text-white border-none ${log.status >= 200 && log.status < 400 ? 'badge-success' : 'badge-error'}`}>{log.status}</span></td>
                                 <td className="font-bold">{log.method}</td>
-                                <td className="text-blue-600 truncate max-w-[150px]" title={log.mapped_model ? `实际: ${log.mapped_model}` : undefined}>
-                                    {log.model || '-'}
-                                    {log.mapped_model && log.mapped_model !== log.model && (
-                                        <span className="text-[9px] text-gray-400 ml-1">→{log.mapped_model.replace('gemini-', 'g-').replace('-latest', '')}</span>
+                                <td className="text-blue-600 truncate max-w-[200px]" title={log.mapped_model && log.mapped_model !== log.model ? `${log.mapped_model} => ${log.model}` : log.model}>
+                                    {log.mapped_model && log.mapped_model !== log.model ? (
+                                        <>
+                                            <span className="text-emerald-600">{log.mapped_model.replace('gemini-', 'g-').replace('-latest', '')}</span>
+                                            <span className="text-gray-400 mx-1">=&gt;</span>
+                                            <span className="text-blue-500">{log.model}</span>
+                                        </>
+                                    ) : (
+                                        log.model || '-'
                                     )}
                                 </td>
                                 <td className="text-gray-500 truncate max-w-[160px] text-[10px]" title={log.account_email}>{log.account_email ? log.account_email.split('@')[0] : '-'}</td>
@@ -448,7 +450,17 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
                                 </div>
                                 <div className="mt-5 pt-5 border-t border-gray-200 dark:border-slate-700">
                                     <span className="block text-gray-500 dark:text-slate-400 uppercase font-black text-[10px] tracking-widest mb-2">{t('monitor.details.model')}</span>
-                                    <span className="font-mono font-black text-blue-600 dark:text-blue-400 break-all text-sm">{selectedLog.model || '-'}</span>
+                                    <span className="font-mono font-black break-all text-sm">
+                                        {selectedLog.mapped_model && selectedLog.mapped_model !== selectedLog.model ? (
+                                            <>
+                                                <span className="text-emerald-600 dark:text-emerald-400">{selectedLog.mapped_model}</span>
+                                                <span className="text-gray-400 mx-2">=&gt;</span>
+                                                <span className="text-blue-600 dark:text-blue-400">{selectedLog.model}</span>
+                                            </>
+                                        ) : (
+                                            <span className="text-blue-600 dark:text-blue-400">{selectedLog.model || '-'}</span>
+                                        )}
+                                    </span>
                                 </div>
                             </div>
 

@@ -494,9 +494,12 @@ pub async fn handle_messages(
     let token_manager = state.token_manager;
     
     let pool_size = token_manager.len();
-    let max_attempts = MAX_RETRY_ATTEMPTS.min(pool_size).max(1);
+    // [FIX] 确保所有账号都能被轮询尝试，而不是被 MAX_RETRY_ATTEMPTS 截断
+    let max_attempts = pool_size.max(1);
 
     let mut last_error = String::new();
+    let mut last_email = String::new();
+    let mut last_mapped_model = String::new();
     let mut retried_without_thinking = false;
     
     for attempt in 0..max_attempts {
@@ -562,6 +565,10 @@ pub async fn handle_messages(
                 ).into_response();
             }
         };
+
+        // 更新最后的上下文信息
+        last_email = email.clone();
+        last_mapped_model = mapped_model.clone();
 
         info!("✓ Using account: {} (type: {})", email, config.request_type);
         
@@ -692,6 +699,7 @@ pub async fn handle_messages(
                     .header(header::CACHE_CONTROL, "no-cache")
                     .header(header::CONNECTION, "keep-alive")
                     .header("X-Account-Email", &email_for_header)
+                    .header("X-Mapped-Model", &request_with_mapped.model)
                     .body(Body::from_stream(sse_stream))
                     .unwrap();
             } else {
@@ -747,6 +755,7 @@ pub async fn handle_messages(
                     .status(StatusCode::OK)
                     .header(header::CONTENT_TYPE, "application/json")
                     .header("X-Account-Email", &email)
+                    .header("X-Mapped-Model", &request_with_mapped.model)
                     .body(Body::from(json_body))
                     .unwrap()
                     .into_response();
@@ -764,6 +773,9 @@ pub async fn handle_messages(
         
         // 3. 标记限流状态（用于 UI 显示）
         if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
+            // [DEBUG] 临时添加：输出 429 错误详情
+            error!("[{}] ⚠️ {} ERROR | Account: {} | Model: {} | Error: {}", 
+                trace_id, status_code, email, request_with_mapped.model, error_text);
             token_manager.mark_rate_limited(&email, status_code, retry_after.as_deref(), &error_text);
         }
 
@@ -836,17 +848,33 @@ pub async fn handle_messages(
         } else {
             // 不可重试的错误，直接返回
             error!("[{}] Non-retryable error {}: {}", trace_id, status_code, error_text);
-            return (status, error_text).into_response();
+            let mut resp = (status, error_text).into_response();
+            // 尝试添加监控头 (忽略非法字符错误)
+            if let Ok(hv) = axum::http::HeaderValue::from_str(&last_email) {
+                resp.headers_mut().insert("X-Account-Email", hv);
+            }
+            if let Ok(hv) = axum::http::HeaderValue::from_str(&last_mapped_model) {
+                resp.headers_mut().insert("X-Mapped-Model", hv);
+            }
+            return resp;
         }
     }
     
-    (StatusCode::TOO_MANY_REQUESTS, Json(json!({
+    let mut resp = (StatusCode::TOO_MANY_REQUESTS, Json(json!({
         "type": "error",
         "error": {
             "type": "overloaded_error",
             "message": format!("All {} attempts failed. Last error: {}", max_attempts, last_error)
         }
-    }))).into_response()
+    }))).into_response();
+
+    if let Ok(hv) = axum::http::HeaderValue::from_str(&last_email) {
+        resp.headers_mut().insert("X-Account-Email", hv);
+    }
+    if let Ok(hv) = axum::http::HeaderValue::from_str(&last_mapped_model) {
+        resp.headers_mut().insert("X-Mapped-Model", hv);
+    }
+    resp
 }
 
 /// 列出可用模型

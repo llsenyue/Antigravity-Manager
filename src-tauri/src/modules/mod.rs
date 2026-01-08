@@ -10,6 +10,7 @@ pub mod process;
 pub mod proxy_db;
 pub mod quota;
 pub mod scheduler;
+pub mod tokenpool;
 pub mod tray;
 
 use crate::models;
@@ -27,4 +28,13 @@ pub async fn fetch_quota(
     email: &str,
 ) -> crate::error::AppResult<(models::QuotaData, Option<String>)> {
     quota::fetch_quota(access_token, email).await
+}
+
+/// 带缓存的配额查询（优化版本）
+pub async fn fetch_quota_with_cache(
+    access_token: &str,
+    email: &str,
+    cached_project_id: Option<&str>,
+) -> crate::error::AppResult<(models::QuotaData, Option<String>)> {
+    quota::fetch_quota_with_cache(access_token, email, cached_project_id).await
 }

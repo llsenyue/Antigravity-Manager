@@ -1,0 +1,140 @@
+# 当前项目相对上游的变更总结
+
+## 概述
+- **提交数量**: 21 个本地提交（相对于 upstream/main）
+- **文件变更**: 27 个文件，+1667 行，-686 行
+
+---
+
+## 1. 预热机制优化 (Smart Warmup)
+
+### 文件: [src-tauri/src/modules/quota.rs](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/modules/quota.rs)
+| 功能 | 描述 |
+|------|------|
+| 智能预热 | 只预热配额 100% 的模型，<100% 的跳过（已在冷却期） |
+| 图片模型预热 | 使用 `responseModalities: ["TEXT"]` + `maxOutputTokens: 1` 最小化消耗 |
+| 自动刷新 | 预热完成 5 秒后自动刷新所有账号配额 |
+| 单账号预热 | 新增 [warm_up_account](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/modules/quota.rs#367-460) 命令支持单账号预热 |
+
+### 文件: [src/pages/Accounts.tsx](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src/pages/Accounts.tsx)
+- 预热按钮在 AccountTable 操作列
+- 预热后显示后端实际返回消息（如"所有模型已在冷却周期中，无需预热"）
+
+---
+
+## 2. API 监控增强
+
+### 文件: [src-tauri/src/proxy/monitor.rs](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/proxy/monitor.rs) + [src-tauri/src/modules/proxy_db.rs](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/modules/proxy_db.rs)
+- 修复 [get_logs](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/modules/proxy_db.rs#80-118) SQL 查询缺失 `mapped_model` 列导致日志丢失
+
+### 文件: [src/components/proxy/ProxyMonitor.tsx](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src/components/proxy/ProxyMonitor.tsx)
+- 修复 Gemini/错误筛选逻辑
+
+---
+
+## 3. 响应头增强
+
+### 文件: [src-tauri/src/proxy/handlers/gemini.rs](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/proxy/handlers/gemini.rs), [claude.rs](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/proxy/handlers/claude.rs), [openai.rs](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/proxy/handlers/openai.rs)
+- 添加 `X-Account-Email` 头显示使用的账号邮箱
+- 添加 `X-Mapped-Model` 头显示实际映射的模型
+
+---
+
+## 4. 冷却指示器
+
+### 文件: [src/components/accounts/AccountGrid.tsx](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src/components/accounts/AccountGrid.tsx), [AccountTable.tsx](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src/components/accounts/AccountTable.tsx)
+- 使用 ❄️ emoji 显示模型冷却状态（<100%）
+- 删除冗余 [AccountRow.tsx](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src/components/accounts/AccountRow.tsx)
+
+---
+
+## 5. 定时预热调度器
+
+### 文件: [src-tauri/src/modules/scheduler.rs](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/modules/scheduler.rs)
+- 修复支持 [default](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/models/config.rs#85-88) 键和 [enabled](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/proxy/monitor.rs#60-63) 字段
+- 正确处理定时预热配置
+
+---
+
+## 6. 翻译更新
+
+### 文件: [src/locales/zh.json](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src/locales/zh.json), [en.json](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src/locales/en.json)
+- 添加 `scheduled_warmup` 相关翻译
+- 添加预热相关提示消息
+
+---
+
+## 7. 其他修复
+
+### 文件: [src-tauri/Cargo.toml](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/Cargo.toml)
+- 添加 `socket2` 依赖
+
+### 文件: [src-tauri/src/commands/mod.rs](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/commands/mod.rs)
+- 更新命令导出，添加 [warm_up_account](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src-tauri/src/modules/quota.rs#367-460)
+
+### 文件: [src/services/accountService.ts](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src/services/accountService.ts)
+- 添加 [warmUpAccount](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src/stores/useAccountStore.ts#283-293) 服务函数
+
+### 文件: [src/types/config.ts](file:///f:/backup/home/llsenyue/project/Antigravity-Manager-Doctor/src/types/config.ts)
+- 添加预热相关类型定义
+
+---
+
+## 变更文件列表
+
+```
+package-lock.json
+src-tauri/Cargo.lock
+src-tauri/Cargo.toml
+src-tauri/src/commands/mod.rs
+src-tauri/src/models/config.rs
+src-tauri/src/modules/mod.rs
+src-tauri/src/modules/proxy_db.rs
+src-tauri/src/modules/quota.rs
+src-tauri/src/modules/scheduler.rs
+src-tauri/src/proxy/handlers/claude.rs
+src-tauri/src/proxy/handlers/gemini.rs
+src-tauri/src/proxy/handlers/openai.rs
+src-tauri/src/proxy/middleware/monitor.rs
+src-tauri/src/proxy/monitor.rs
+src-tauri/src/proxy/server.rs
+src/components/accounts/AccountGrid.tsx
+src/components/accounts/AccountTable.tsx
+src/components/proxy/ProxyMonitor.tsx
+src/locales/en.json
+src/locales/zh.json
+src/pages/Accounts.tsx
+src/pages/Settings.tsx
+src/services/accountService.ts
+src/stores/useAccountStore.ts
+src/types/config.ts
+```
+
+---
+
+## 提交历史
+
+| Commit | 描述 |
+|--------|------|
+| 361370f | fix: 重新启用图片模型预热（使用TEXT模式最小消耗） |
+| 4da8405 | fix: 预热消息区分已冷却和跳过图片模型 |
+| 0fd2bc3 | fix: 预热时显示后端实际返回消息 |
+| 90ca76a | fix: 跳过图片模型预热 |
+| 62edce6 | feat: 完善预热机制 - 图片模型用TEXT模式预热 |
+| 3bfe4f1 | fix: 修复API监控日志查询缺失mapped_model列 |
+| a9ff918 | feat: 智能预热逻辑 - 只预热满值模型 |
+| 0d59318 | fix: 跳过图片模型预热并添加预热后自动刷新 |
+| 959f8f1 | feat: 在OpenAI处理程序响应中添加X-Account-Email头 |
+| 57525ea | feat: 在Gemini和Claude处理程序响应中添加X-Account-Email头 |
+| d9ad831 | fix: 修复API监控筛选逻辑（Gemini/错误筛选） |
+| a96551e | chore: 删除冗余AccountRow.tsx |
+| 4fe72fb | feat: 在AccountTable操作列添加单账号预热按钮 |
+| 1a098ce | fix: 在AccountTable中添加冷却指示器 |
+| 4574391 | fix: 改用星号放在百分比后面作为冷却标志 |
+| d0fb25e | fix: 用styled span替代emoji显示冷却标志 |
+| 73e7650 | fix: 修复定时预热调度器支持default键和enabled字段 |
+| 0a2d612 | feat: 恢复一键预热功能 |
+| 138e807 | fix: 改用emoji显示冷却指示器 |
+| 3fb1c26 | fix: 添加scheduled_warmup翻译和Snowflake冷却指示器 |
+| 4e740f5 | fix: 修复合并后编译错误 |
+| 474455a | 本地修改: 筛选逻辑重写、账号轮换修复、X-Mapped-Model/X-Account-Email headers |

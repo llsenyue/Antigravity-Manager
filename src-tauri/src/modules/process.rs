@@ -354,7 +354,7 @@ fn get_antigravity_pids() -> Vec<u32> {
 }
 
 /// 关闭 Antigravity 进程
-pub fn close_antigravity(timeout_secs: u64) -> Result<(), String> {
+pub fn close_antigravity(#[allow(unused_variables)] timeout_secs: u64) -> Result<(), String> {
     crate::modules::logger::log_info("正在关闭 Antigravity...");
 
     #[cfg(target_os = "windows")]
@@ -712,7 +712,10 @@ pub fn start_antigravity() -> Result<(), String> {
         .and_then(|c| c.antigravity_executable.clone());
     let args = config.and_then(|c| c.antigravity_args.clone());
 
-    if let Some(mut path_str) = manual_path {
+    if let Some(path_str_val) = manual_path {
+        #[allow(unused_mut)]
+        let mut path_str = path_str_val;
+        #[allow(unused_mut)]
         let mut path = std::path::PathBuf::from(&path_str);
 
         #[cfg(target_os = "macos")]

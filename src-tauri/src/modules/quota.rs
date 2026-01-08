@@ -112,23 +112,35 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
 }
 
 /// 查询账号配额的统一入口
+/// 查询账号配额（优化版本：支持传入缓存的 project_id，避免重复调用 loadCodeAssist）
+///
+/// # Arguments
+/// * `access_token` - OAuth Access Token
+/// * `email` - 账号邮箱（用于日志）
+/// * `cached_project_id` - 可选的缓存 project_id，如有则跳过 loadCodeAssist 调用
 pub async fn fetch_quota(
     access_token: &str,
     email: &str,
 ) -> crate::error::AppResult<(QuotaData, Option<String>)> {
-    fetch_quota_inner(access_token, email).await
+    fetch_quota_with_cache(access_token, email, None).await
 }
 
-/// 查询账号配额逻辑
-pub async fn fetch_quota_inner(
+/// 带缓存的配额查询（新增）
+pub async fn fetch_quota_with_cache(
     access_token: &str,
     email: &str,
+    cached_project_id: Option<&str>,
 ) -> crate::error::AppResult<(QuotaData, Option<String>)> {
     use crate::error::AppError;
-    // crate::modules::logger::log_info(&format!("[{}] 开始外部查询配额...", email));
 
-    // 1. 获取 Project ID 和订阅类型
-    let (project_id, subscription_tier) = fetch_project_id(access_token, email).await;
+    // 优化：如果有缓存的 project_id，跳过 loadCodeAssist 调用以节省 API 配额
+    let (project_id, subscription_tier) = if let Some(pid) = cached_project_id {
+        tracing::debug!("[{}] 使用缓存的 project_id: {}", email, pid);
+        (Some(pid.to_string()), None) // 使用缓存时无法获取 subscription_tier
+    } else {
+        tracing::debug!("[{}] 无缓存 project_id，调用 loadCodeAssist...", email);
+        fetch_project_id(access_token, email).await
+    };
 
     let final_project_id = project_id.as_deref().unwrap_or("bamboo-precept-lgxtn");
 
@@ -249,7 +261,17 @@ pub async fn fetch_all_quotas(
 }
 
 /// 一键预热所有账号 - 触发5小时配额恢复周期
+/// 支持临界值重试：当模型配额接近100%但未达到时（95-99%），等待后重试
 pub async fn warm_up_all_accounts() -> Result<String, String> {
+    warm_up_all_accounts_with_retry(0).await
+}
+
+/// 内部预热函数，支持重试
+async fn warm_up_all_accounts_with_retry(retry_count: u32) -> Result<String, String> {
+    const MAX_RETRIES: u32 = 3;
+    const RETRY_DELAY_SECS: u64 = 30;
+    const NEAR_READY_THRESHOLD: i32 = 95; // 配额 >= 95% 视为即将恢复
+
     let accounts =
         crate::modules::account::list_accounts().map_err(|e| format!("加载账号失败: {}", e))?;
 
@@ -276,14 +298,17 @@ pub async fn warm_up_all_accounts() -> Result<String, String> {
     }
 
     let upstream = std::sync::Arc::new(crate::proxy::upstream::client::UpstreamClient::new(None));
-    let total_tasks = pro_ultra_accounts.len() * 4; // Estimate 4 models per account
+    let total_tasks = pro_ultra_accounts.len() * 4;
     let (tx, mut _rx) = tokio::sync::mpsc::channel(total_tasks);
 
-    for account in pro_ultra_accounts {
+    let mut has_models_to_warm = false;
+    let mut has_near_ready_models = false;
+
+    for account in &pro_ultra_accounts {
         let access_token = account.token.access_token.clone();
         let upstream = upstream.clone();
         let tx = tx.clone();
-        let project_id = "bamboo-precept-lgxtn"; // Hardcoded default
+        let project_id = "bamboo-precept-lgxtn";
 
         // Smart Warm-up: Only warmup models at 100% (not in cooldown)
         let mut models_to_warm: Vec<(String, i32)> = Vec::new();
@@ -291,6 +316,14 @@ pub async fn warm_up_all_accounts() -> Result<String, String> {
             for m in &quota.models {
                 if m.percentage >= 100 {
                     models_to_warm.push((m.name.clone(), m.percentage));
+                } else if m.percentage >= NEAR_READY_THRESHOLD {
+                    // 临界状态：配额接近100%，可能正在恢复中
+                    tracing::info!(
+                        "[Warmup] Model {} at {}% - near ready, may retry",
+                        m.name,
+                        m.percentage
+                    );
+                    has_near_ready_models = true;
                 } else {
                     tracing::info!(
                         "[Warmup] Skipping {} ({}% - already in cooldown)",
@@ -301,10 +334,11 @@ pub async fn warm_up_all_accounts() -> Result<String, String> {
             }
         }
 
-        // Skip this account if no models need warming
         if models_to_warm.is_empty() {
             continue;
         }
+
+        has_models_to_warm = true;
 
         for (model_name, pct) in models_to_warm {
             let at = access_token.clone();
@@ -315,9 +349,7 @@ pub async fn warm_up_all_accounts() -> Result<String, String> {
             tokio::spawn(async move {
                 let is_image = m_name.to_lowercase().contains("image");
 
-                // Use minimal request with maxOutputTokens=1 for all models
                 let body = if is_image {
-                    // For image models, request minimal text output (not image generation)
                     serde_json::json!({
                         "project": project_id,
                         "model": m_name,
@@ -353,15 +385,49 @@ pub async fn warm_up_all_accounts() -> Result<String, String> {
         }
     }
 
-    // Schedule auto-refresh after warmup completes (5 seconds delay)
-    tokio::spawn(async {
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        tracing::info!("[Warmup] Auto-refreshing all account quotas after warmup...");
-        let _ = crate::commands::refresh_all_quotas().await;
-        tracing::info!("[Warmup] Auto-refresh completed");
-    });
+    // 临界值重试逻辑：如果有模型接近恢复且没有模型需要预热，等待后重试
+    if !has_models_to_warm && has_near_ready_models && retry_count < MAX_RETRIES {
+        tracing::info!(
+            "[Warmup] No models at 100%, but {} near-ready models detected. Waiting {}s before retry ({}/{})...",
+            pro_ultra_accounts.iter()
+                .filter_map(|a| a.quota.as_ref())
+                .flat_map(|q| q.models.iter())
+                .filter(|m| m.percentage >= NEAR_READY_THRESHOLD && m.percentage < 100)
+                .count(),
+            RETRY_DELAY_SECS,
+            retry_count + 1,
+            MAX_RETRIES
+        );
 
-    Ok(format!("已启动智能预热任务"))
+        // 先刷新配额状态
+        let _ = crate::commands::refresh_all_quotas().await;
+
+        // 等待后重试
+        tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY_SECS)).await;
+
+        return Box::pin(warm_up_all_accounts_with_retry(retry_count + 1)).await;
+    }
+
+    // Schedule auto-refresh after warmup completes (5 seconds delay)
+    if has_models_to_warm {
+        tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            tracing::info!("[Warmup] Auto-refreshing all account quotas after warmup...");
+            let _ = crate::commands::refresh_all_quotas().await;
+            tracing::info!("[Warmup] Auto-refresh completed");
+        });
+    }
+
+    if has_models_to_warm {
+        Ok(format!("已启动智能预热任务"))
+    } else if retry_count > 0 {
+        Ok(format!(
+            "已完成 {} 次重试检查，所有模型仍在冷却中",
+            retry_count
+        ))
+    } else {
+        Ok(format!("所有模型已在冷却周期中，无需预热"))
+    }
 }
 
 /// 单账号预热 - 只预热配额满值(100%)的模型，使用最小请求触发5小时恢复周期

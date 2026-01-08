@@ -175,7 +175,10 @@ impl AxumServer {
                 "/v1beta/models/:model/countTokens",
                 post(handlers::gemini::handle_count_tokens),
             ) // Specific route priority
-            .route("/v1/models/detect", post(handlers::common::handle_detect_model))
+            .route(
+                "/v1/models/detect",
+                post(handlers::common::handle_detect_model),
+            )
             .route("/v1/api/event_logging/batch", post(silent_ok_handler))
             .route("/v1/api/event_logging", post(silent_ok_handler))
             .route("/healthz", get(health_check_handler))
@@ -219,7 +222,7 @@ impl AxumServer {
 
         socket
             .bind(&socket_addr.into())
-            .map_err(|e| format!("地址 {} 绑定失败: 以一种访问权限不允许的方式做了一个访问套接字的尝试。(os error 10013)", addr))?;
+            .map_err(|_| format!("地址 {} 绑定失败: 以一种访问权限不允许的方式做了一个访问套接字的尝试。(os error 10013)", addr))?;
 
         socket.listen(128).map_err(|e| format!("监听失败: {}", e))?;
 

@@ -63,3 +63,7 @@ tracing-log = "0.2.0"
 tauri-plugin-autostart = "2.5.1"
 sha2 = "0.10"
 socket2 = "0.6.1"
+
+# TokenPool 远程接入模块
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures-util = "0.3"

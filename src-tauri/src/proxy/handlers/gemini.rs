@@ -202,6 +202,7 @@ pub async fn handle_generate(
                     .header("Cache-Control", "no-cache")
                     .header("Connection", "keep-alive")
                     .header("X-Account-Email", &email)
+                    .header("X-Mapped-Model", &mapped_model)
                     .body(body)
                     .unwrap()
                     .into_response());
@@ -217,6 +218,7 @@ pub async fn handle_generate(
             return Ok(Response::builder()
                 .header("Content-Type", "application/json")
                 .header("X-Account-Email", &email)
+                .header("X-Mapped-Model", &mapped_model)
                 .body(Body::from(json_body))
                 .unwrap()
                 .into_response());
