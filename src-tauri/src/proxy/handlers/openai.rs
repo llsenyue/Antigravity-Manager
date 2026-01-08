@@ -39,6 +39,7 @@ pub async fn handle_chat_completions(
                 tool_calls: None,
                 tool_call_id: None,
                 name: None,
+                reasoning_content: None,
             });
     }
 
@@ -537,6 +538,7 @@ pub async fn handle_completions(
                 tool_calls: None,
                 tool_call_id: None,
                 name: None,
+                reasoning_content: None,
             });
     }
 

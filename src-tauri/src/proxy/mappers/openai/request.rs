@@ -136,6 +136,11 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
                                         }
                                     }
                                 }
+                                OpenAIContentBlock::AudioUrl { audio_url } => {
+                                    // [NEW] 音频 URL 支持（上游 v3.3.17 新增）
+                                    tracing::debug!("[OpenAI-Request] AudioUrl not yet fully supported, skipping: {}", audio_url.url);
+                                    // TODO: 实现音频处理逻辑
+                                }
                             }
                         }
                     }
