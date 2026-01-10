@@ -433,13 +433,41 @@ function Settings() {
                                                     return `${warmupHour.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
                                                 };
 
-                                                // 更新时间点配置
+                                                // 更新时间点配置（带验证）
                                                 const updateTimePoint = (updates: { start?: string; enabled?: boolean }) => {
                                                     const newTimes = [...(formData.scheduled_warmup?.schedules?.['default'] || [
                                                         { start: '10:00', end: '10:00', enabled: true },
                                                         { start: '15:00', end: '15:00', enabled: true },
                                                         { start: '21:00', end: '21:00', enabled: true }
                                                     ])];
+
+                                                    // 如果是更新时间，验证间隔
+                                                    if (updates.start !== undefined) {
+                                                        const newTimeStr = updates.start;
+                                                        const [newH, newM] = newTimeStr.split(':').map(Number);
+                                                        const newMinutes = newH * 60 + newM;
+
+                                                        // 检查与其他启用的时间点的间隔
+                                                        for (let i = 0; i < newTimes.length; i++) {
+                                                            if (i === idx) continue; // 跳过自己
+                                                            const other = newTimes[i];
+                                                            if (!other?.start || other.enabled === false) continue;
+
+                                                            const [otherH, otherM] = other.start.split(':').map(Number);
+                                                            const otherMinutes = otherH * 60 + otherM;
+
+                                                            // 计算间隔（考虑跨日）
+                                                            let diff = Math.abs(newMinutes - otherMinutes);
+                                                            if (diff > 720) diff = 1440 - diff; // 跨日情况取较短间隔
+
+                                                            const minInterval = 5 * 60; // 5小时 = 300分钟
+                                                            if (diff < minInterval) {
+                                                                showToast(t('settings.account.scheduled_warmup.interval_error'), 'error');
+                                                                return; // 不更新
+                                                            }
+                                                        }
+                                                    }
+
                                                     newTimes[idx] = {
                                                         ...newTimes[idx],
                                                         start: updates.start ?? newTimes[idx]?.start ?? '',
@@ -641,7 +669,7 @@ function Settings() {
                                     <p className="text-sm text-gray-600 dark:text-gray-400">{t('settings.advanced.logs_desc')}</p>
                                 </div>
                                 <div className="badge badge-primary badge-outline gap-2 font-mono">
-                                    v3.3.21
+                                    v3.3.22
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <button

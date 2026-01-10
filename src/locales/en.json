@@ -209,7 +209,8 @@
                 "warmup_suffix": "automatically",
                 "not_set": "Time not set",
                 "quota_hint": "Warmup consumes a small amount of quota to activate accounts",
-                "hint": "Recommend setting 2-3 peak times to cover your main usage scenarios"
+                "hint": "Recommend setting 2-3 peak times to cover your main usage scenarios",
+                "interval_error": "Peak times must be at least 5 hours apart to ensure warmup works properly"
             }
         },
         "proxy": {

@@ -1,6 +1,6 @@
 # Antigravity Tools 🚀
 >
-> 专业的 AI 账号管理与协议反代系统 (v3.3.21)
+> 专业的 AI 账号管理与协议反代系统 (v3.3.22)
 <div align="center">
   <img src="public/icon.png" alt="Antigravity Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
 
@@ -9,7 +9,7 @@
   
   <p>
     <a href="https://github.com/lbjlaq/Antigravity-Manager">
-      <img src="https://img.shields.io/badge/Version-3.3.21-blue?style=flat-square" alt="Version">
+      <img src="https://img.shields.io/badge/Version-3.3.22-blue?style=flat-square" alt="Version">
     </a>
     <img src="https://img.shields.io/badge/Tauri-v2-orange?style=flat-square" alt="Tauri">
     <img src="https://img.shields.io/badge/Backend-Rust-red?style=flat-square" alt="Rust">
@@ -202,6 +202,13 @@ print(response.choices[0].message.content)
 ## 📝 开发者与社区
 
 * **版本演进 (Changelog)**:
+  * **v3.3.22 (2026-01-10) - Fork 独有版本**:
+    * **🔧 预热调度机制增强 (Warmup Queue Enhancement)**:
+      * **跨日高峰支持**: 使用时间戳替代分钟数+日期字符串，正确处理如"次日 03:00 高峰，前一天 22:00 触发"的跨日场景。
+      * **30 分钟宽限期**: 任务有效窗口扩展至高峰后 30 分钟，确保极端接近的高峰时间也能被正确预热。
+      * **前端时间间隔验证**: 添加 5 小时最小间隔限制，从配置源头防止预热冲突。
+      * **智能冷却检测**: WaitingCooldown 状态的任务只在冷却结束后才尝试执行，避免频繁无意义的 API 调用。
+      * **影响范围**: 此增强确保了多高峰配置下预热的可靠性，彻底解决了跨日任务和极端接近时间的边界问题。
   * **v3.3.21 (2026-01-10) - Fork 独有版本**:
     * **🔥 智能高峰期预热调度 (Scheduled Warmup)**:
       * **核心问题**: Gemini API 配额采用 5 小时滑动窗口重置机制。如果在高峰期使用时配额恰好重置，将无法立即获得 100% 配额。
