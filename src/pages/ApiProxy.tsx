@@ -17,7 +17,7 @@ import {
     Zap,
     Cpu,
     Puzzle,
-    Wind,
+    Terminal,
     ArrowRight,
     Trash2,
     Layers,
@@ -30,6 +30,7 @@ import { AppConfig, ProxyConfig, StickySessionConfig } from '../types/config';
 import HelpTooltip from '../components/common/HelpTooltip';
 import ModalDialog from '../components/common/ModalDialog';
 import { showToast } from '../components/common/ToastContainer';
+import GroupedSelect from '../components/common/GroupedSelect';
 
 
 interface ProxyStatus {
