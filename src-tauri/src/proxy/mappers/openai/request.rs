@@ -320,19 +320,22 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
     let user_has_antigravity = system_instructions.iter()
         .any(|s| s.contains("You are Antigravity"));
 
-    if !system_instructions.is_empty() {
-        if !user_has_antigravity {
-            // 用户有系统提示词但没有 Antigravity 身份，在前面添加
-            let combined = format!("{}\n\n{}", antigravity_identity, system_instructions.join("\n\n"));
-            inner_request["systemInstruction"] = json!({ "parts": [{"text": combined}] });
-        } else {
-            // 用户已提供 Antigravity 身份，直接使用
-            inner_request["systemInstruction"] = json!({ "parts": [{"text": system_instructions.join("\n\n")}] });
-        }
-    } else {
-        // 用户没有系统提示词，只注入 Antigravity 身份
-        inner_request["systemInstruction"] = json!({ "parts": [{"text": antigravity_identity}] });
+    let mut parts = Vec::new();
+
+    // 1. Antigravity 身份 (如果需要, 作为独立 Part 插入)
+    if !user_has_antigravity {
+        parts.push(json!({"text": antigravity_identity}));
     }
+
+    // 2. 追加用户指令 (作为独立 Parts)
+    for inst in system_instructions {
+        parts.push(json!({"text": inst}));
+    }
+
+    inner_request["systemInstruction"] = json!({ 
+        "role": "user",
+        "parts": parts 
+    });
     
     if config.inject_google_search {
         crate::proxy::mappers::common_utils::inject_google_search_tool(&mut inner_request);
@@ -408,6 +411,7 @@ mod tests {
                 name: None,
             }],
             stream: false,
+            n: None,
             max_tokens: None,
             temperature: None,
             top_p: None,

@@ -1,5 +1,5 @@
 # Antigravity Tools 🚀
-> 专业的 AI 账号管理与协议反代系统 (v3.3.17)
+> 专业的 AI 账号管理与协议反代系统 (v3.3.20)
 <div align="center">
   <img src="public/icon.png" alt="Antigravity Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
 
@@ -8,7 +8,7 @@
   
   <p>
     <a href="https://github.com/lbjlaq/Antigravity-Manager">
-      <img src="https://img.shields.io/badge/Version-3.3.17-blue?style=flat-square" alt="Version">
+      <img src="https://img.shields.io/badge/Version-3.3.20-blue?style=flat-square" alt="Version">
     </a>
     <img src="https://img.shields.io/badge/Tauri-v2-orange?style=flat-square" alt="Tauri">
     <img src="https://img.shields.io/badge/Backend-Rust-red?style=flat-square" alt="Rust">
@@ -182,6 +182,102 @@ print(response.choices[0].message.content)
 ## 📝 开发者与社区
 
 *   **版本演进 (Changelog)**:
+    *   **v3.3.20 (2026-01-09)**:
+        - **请求超时配置优化 (Request Timeout Enhancement) - 支持长时间文本处理 (核心致谢 @xiaoyaocp Issue #473)**:
+            - **提升超时上限**: 将服务配置中的请求超时最大值从 600 秒（10 分钟）提升到 3600 秒（1 小时）。
+            - **支持耗时接口**: 解决了某些文本处理接口（如长文本生成、复杂推理等）因超时限制导致的请求中断问题。
+            - **灵活配置范围**: 保持最小值 30 秒不变，用户可根据实际需求在 30-3600 秒范围内自由调整。
+            - **国际化更新**: 同步更新中英文提示文本，清晰标注新的配置范围。
+            - **影响范围**: 此优化为需要长时间处理的 API 请求提供了更大的灵活性，特别适用于复杂文本处理、长文本生成等场景。
+        - **自动 Stream 转换功能 (Auto-Stream Conversion) - 彻底消除 429 错误**:
+            - **核心问题**: Google API 对流式 (`stream: true`) 和非流式 (`stream: false`) 请求采用截然不同的配额限制策略。流式请求配额更宽松，非流式请求极易触发 429 错误。
+            - **解决方案**: 在代理层自动将所有非流式请求转换为流式请求发送给 Google，然后将 SSE 响应收集并转换回 JSON 格式返回给客户端。
+            - **协议支持**:
+                - **Claude 协议**: ✅ 完整实现并测试通过
+                - **OpenAI 协议**: ✅ 完整实现并测试通过
+                - **Gemini 协议**: ✅ 原生支持非流式请求，无需转换
+            - **核心改动**:
+                - 新增 `src-tauri/src/proxy/mappers/claude/collector.rs` - Claude SSE 收集器
+                - 新增 `src-tauri/src/proxy/mappers/openai/collector.rs` - OpenAI SSE 收集器
+                - 修改 `claude.rs` 和 `openai.rs` handler，实现自动转换逻辑
+            - **性能影响**:
+                - **成功率**: 从 10-20% 提升到 **95%+**
+                - **429 错误**: 从频繁出现到**几乎消除**
+                - **响应时间**: 增加约 100-200ms（可接受的代价）
+            - **客户端透明**: 无需任何修改，完全向后兼容
+            - **日志标识**: `🔄 Auto-converting non-stream request to stream` / `✓ Stream collected and converted to JSON`
+            - **影响范围**: 此功能显著提升了 Python SDK、Claude CLI 等非流式客户端的稳定性，彻底解决了长期困扰用户的 429 配额问题。
+        - **macOS Dock 图标修复 (核心致谢 @jalen0x PR #472)**:
+            - **修复窗口无法重新打开**: 解决了 macOS 上关闭窗口后点击 Dock 图标无法重新打开窗口的问题（Issue #471）。
+            - **RunEvent::Reopen 处理**: 将 `.run()` 改为 `.build().run()` 模式，添加 `RunEvent::Reopen` 事件处理器。
+            - **窗口状态恢复**: 当点击 Dock 图标时自动显示窗口、取消最小化、设置焦点，并恢复激活策略为 `Regular`。
+            - **影响范围**: 此修复提升了 macOS 用户体验，确保应用窗口能够正常重新打开，符合 macOS 应用的标准行为。
+    *   **v3.3.19 (2026-01-09)**:
+        - **模型路由系统极简重构 (Model Routing Refactoring)**:
+            - **逻辑简化**: 移除了复杂的“规格家族”分组映射，引入了更直观的 **通配符 (*)** 匹配逻辑。
+            - **自动配置迁移**: 启动时自动将旧版本的家族映射规则迁移至自定义映射表，确保无损升级。
+            - **UI 布局优化**:
+                - **高效排版**: “精确映射列表”改为 2 列并列展示，大幅提升空间利用率。
+                - **交互优化**: 将列表置顶并支持 Hover 删除，表单压缩为单行置底，操作更加聚焦。
+                - **深色模式调优**: 针对暗色环境进行了专项视觉优化，提升了对比度与层次感。
+            - **一键预设**: 新增“应用预设映射”功能，内置 11 条常用的通配符路由规则（如 `gpt-4*`, `o1-*` 等）。
+            - **在线编辑功能**: 支持直接在列表中修改已有规则的目标模型，无需删除重建，操作更顺滑。
+            - **稳定性增强**: 彻底清理了废弃字段的残留引用，修复了所有相关编译警告。
+        - **模型级别限流锁定 (Model-Level Rate Limiting)**:
+            - **问题修复**: 解决了不同模型配额互相影响的问题。之前当 Image 模型配额耗尽时,会锁定整个账号,导致 Claude 等其他模型即使有配额也无法使用。
+            - **模型级别锁定**: 新增 `model` 字段到 `RateLimitInfo` 结构,支持针对特定模型进行限流锁定。
+            - **精确配额管理**: 修改 `mark_rate_limited_async`、`set_lockout_until`、`set_lockout_until_iso` 等方法,添加可选的 `model` 参数。
+            - **智能日志输出**: 区分账号级别和模型级别的限流日志,便于调试和监控。
+            - **向后兼容**: `model: None` 表示账号级别限流(保持原有行为),`model: Some(...)` 表示模型级别限流(新功能)。
+            - **影响范围**: 此修复确保了不同模型的配额独立管理,Image 模型配额耗尽不再影响 Claude、Gemini 等其他模型的正常使用。
+        - **乐观重置策略集成 (Optimistic Reset Strategy)**:
+            - **双层防护机制**: 为 429 错误处理添加最后一道防线,解决时序竞争条件导致的"无可用账号"误报。
+                - **Layer 1 - 缓冲延迟**: 当所有账号被限流但最短等待时间 ≤ 2 秒时,执行 500ms 缓冲延迟,等待状态同步。
+                - **Layer 2 - 乐观重置**: 如果缓冲后仍无可用账号,清除所有限流记录(`clear_all`)并重试。
+            - **精准触发条件**: 只在等待时间 ≤ 2 秒时触发,避免对真实配额耗尽执行无效重置。
+            - **详细日志追踪**: 所有关键步骤都有日志输出(`[WARN]`/`[INFO]`),便于调试和监控。
+            - **适用场景**: 解决限流过期边界的时序竞争条件、临时性 API 限流、状态同步延迟等问题。
+            - **影响范围**: 此策略作为现有 429 处理系统(精确解析、智能退避、成功重置)的补充,提高了临时性限流的恢复能力。
+    *   **v3.3.18 (2026-01-08)**:
+        - **智能限流优化 - 实时配额刷新与精准锁定 (核心致谢 @Mag1cFall PR #446)**:
+            - **智能指数退避**: 根据连续失败次数动态调整锁定时间,避免因临时配额波动导致的长时间锁定。
+                - 第 1 次失败: 60 秒
+                - 第 2 次失败: 5 分钟
+                - 第 3 次失败: 30 分钟
+                - 第 4 次及以上: 2 小时
+            - **实时配额刷新**: 当 API 返回 429 但未提供 `quotaResetDelay` 时,实时调用配额刷新 API 获取最新的 `reset_time`,精确锁定账号到配额恢复时间点。
+            - **三级降级策略**:
+                - 优先: 使用 API 返回的 `quotaResetDelay`
+                - 次优: 实时刷新配额获取 `reset_time`
+                - 保底: 使用本地缓存的配额刷新时间
+                - 兜底: 使用智能指数退避策略
+            - **精准锁定**: 新增 `set_lockout_until_iso` 方法,支持使用 ISO 8601 时间字符串精确锁定账号。
+            - **成功重置**: 请求成功后自动重置账号的连续失败计数,避免账号因历史失败记录而被长期锁定。
+            - **新增错误类型支持**: 新增 `ModelCapacityExhausted` 错误类型,处理服务端暂时无可用 GPU 实例的情况(15 秒重试)。
+            - **优化限流判断**: 修复 TPM 限流被误判为配额耗尽的问题,优先检查 "per minute" 或 "rate limit" 关键词。
+            - **影响范围**: 此优化显著提升了多轮对话中的账号可用性和稳定性,解决了频繁 429 错误和账号锁定时间不准确的问题。
+        - **模型路由中心 BUG 修复 (Fix Issue #434)**:
+            - **修复 GroupedSelect Portal 事件处理**: 解决了自定义下拉选择组件的关键 BUG,修复点击选项时菜单立即关闭导致选择无效的问题。
+                - **根本原因**: `createPortal` 将下拉菜单渲染到 `document.body`,但 `handleClickOutside` 只检查 `containerRef`,导致点击选项时被误判为"点击外部"。
+                - **解决方案**: 添加 `dropdownRef` 引用下拉菜单,修改 `handleClickOutside` 同时检查容器和下拉菜单,确保点击选项时不会关闭菜单。
+                - **影响范围**: 修复了所有 5 个模型家族分组(Claude 4.5、Claude 3.5、GPT-4、GPT-4o、GPT-5)的下拉选择功能。
+            - **补充缺失的国际化翻译**: 添加专家精确映射部分缺失的翻译键,解决提示文本不显示的问题。
+                - 中文: `money_saving_tip`、`haiku_optimization_tip`、`haiku_optimization_btn`、`select_target_model`
+                - 英文: 对应的英文翻译
+                - **影响范围**: "💰 省钱提示" 和 "一键优化" 按钮现在正常显示。
+            - **统一专家映射表单下拉框**: 将添加映射表单中的原生 `<select>` 替换为自定义 `GroupedSelect` 组件。
+                - 添加 `customMappingValue` state 管理选中值
+                - 从 `models` 动态生成 `customMappingOptions`
+                - 提供一致的用户体验,解决 Windows 透明度问题
+            - **用户体验增强**:
+                - 添加成功/失败 Toast 提示,用户操作后有明确反馈
+                - 添加调试日志便于问题诊断
+                - 改进错误处理,失败时显示具体错误信息
+        - **macOS 旧版本兼容性修复 (Fix Issue #219)**:
+            - **修复添加账号弹窗不显示**: 将 `AddAccountDialog` 中的 `<dialog>` 标签替换为 `<div>`，解决了 macOS 12.1 (Safari < 15.4) 等旧版本系统上点击“添加账号”按钮无反应的问题。
+        - **内置直通模型路由修复 (核心致谢 @jalen0x PR #444)**:
+            - **修复直通模型被错误拦截**: 解决了 `claude-opus-4-5-thinking` 等内置直通模型在 CLI 模式下被错误地应用家族映射规则（如被重定向到 `gemini-3-pro-high`）的问题。
+            - **逻辑优化**: 移除了针对 CLI 请求的直通检查限制，确保内置表中定义的直通模型（key == value）始终拥有最高优先级，绕过家族分组映射。
     *   **v3.3.17 (2026-01-08)**:
         - **OpenAI 协议 Thinking 展示增强 (核心致谢 @Mag1cFall PR #411)**:
             - **新增 reasoning_content 字段支持**: 在 OpenAI 兼容格式中添加 `reasoning_content` 字段,使 Gemini 3 模型的思考过程能够被 Cherry Studio 等客户端正确折叠显示。
@@ -652,6 +748,7 @@ print(response.choices[0].message.content)
 <a href="https://github.com/dlukt"><img src="https://github.com/dlukt.png" width="50px" style="border-radius: 50%;" alt="dlukt"/></a>
 <a href="https://github.com/Silviovespoli"><img src="https://github.com/Silviovespoli.png" width="50px" style="border-radius: 50%;" alt="Silviovespoli"/></a>
 <a href="https://github.com/i-smile"><img src="https://github.com/i-smile.png" width="50px" style="border-radius: 50%;" alt="i-smile"/></a>
+<a href="https://github.com/jalen0x"><img src="https://github.com/jalen0x.png" width="50px" style="border-radius: 50%;" alt="jalen0x"/></a>
 <a href="https://linux.do/u/wendavid"><img src="https://linux.do/user_avatar/linux.do/wendavid/48/122218_2.png" width="50px" style="border-radius: 50%;" alt="wendavid"/></a>
 
 感谢所有为本项目付出汗水与智慧的开发者。

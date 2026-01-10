@@ -354,7 +354,7 @@ function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
             </button>
 
             {isOpen && createPortal(
-                <dialog className="modal modal-open z-[100]">
+                <div className="modal modal-open z-[100]">
                     {/* Draggable Top Region */}
                     <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-[110]" />
 
@@ -557,7 +557,7 @@ function AddAccountDialog({ onAdd }: AddAccountDialogProps) {
                         </div>
                     </div>
                     <div className="modal-backdrop bg-black/40 backdrop-blur-sm fixed inset-0 z-[-1]" onClick={() => setIsOpen(false)}></div>
-                </dialog>,
+                </div>,
                 document.body
             )}
         </>

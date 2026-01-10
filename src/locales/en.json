@@ -380,7 +380,7 @@
             },
             "request_timeout": "Request Timeout",
             "request_timeout_tooltip": "Maximum time (seconds) the proxy waits for an upstream response, including streaming. Increase for long generations; restart required to apply.",
-            "request_timeout_hint": "Default 120s, range 30-600s. Restart service to apply changes.",
+            "request_timeout_hint": "Default 120s, range 30-3600s. Restart service to apply changes.",
             "enable_logging": "Enable Request Logging",
             "enable_logging_hint": "Record history for debugging (Minor perf cost)",
             "upstream_proxy": {
@@ -469,7 +469,11 @@
         },
         "router": {
             "title": "Model Router",
-            "subtitle": "Route models by series or add custom exact mappings.",
+            "subtitle": "Route models by series or add custom exact mappings.\nNote: Native Claude pass-through models (e.g. claude-opus-4-5-thinking) bypass series groups by default. Use \"Expert Custom Routing\" to override.",
+            "subtitle_simple": "Customize model routing with wildcards or exact mappings",
+            "apply_presets": "Apply Presets",
+            "presets_applied": "Presets applied successfully",
+            "custom_mappings": "Custom Mappings",
             "group_title": "Series Groups",
             "groups": {
                 "claude_45": {
@@ -495,6 +499,13 @@
             },
             "expert_title": "Expert Custom Routing",
             "expert_subtitle": "Precise matching for any original model ID.",
+            "money_saving_tip": "💰 Cost-saving tip:",
+            "haiku_optimization_tip": "Claude CLI uses {{model}} for background tasks by default. Map it to a cheaper Flash model to save ~95% costs",
+            "haiku_optimization_btn": "Quick Optimize",
+            "haiku_tip_title": "💰 Cost-saving tip:",
+            "haiku_tip_body_before": "Claude CLI defaults to",
+            "haiku_tip_body_after": "for background tasks; mapping it to a cheaper Flash model can save about 95% of the cost.",
+            "haiku_tip_action": "Optimize",
             "reset_confirm": "Reset all mappings to system defaults?",
             "reset_mapping": "Reset Mapping",
             "add_mapping": "Add Mapping",
@@ -503,7 +514,8 @@
             "gemini3_only_warning": "⚠️ Gemini 3 series only",
             "default_suffix": " (Default)",
             "original_id": "Original ID",
-            "route_to": "Route To"
+            "route_to": "Route To",
+            "select_target_model": "Select Target Model"
         },
         "multi_protocol": {
             "title": "Multi-Protocol Support",
@@ -557,6 +569,7 @@
             "status": "Status",
             "method": "Method",
             "model": "Model",
+            "account": "Account",
             "path": "Path",
             "usage": "Tokens",
             "duration": "Duration",

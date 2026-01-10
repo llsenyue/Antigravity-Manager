@@ -53,13 +53,10 @@ pub async fn handle_generate(
     let mut last_error = String::new();
 
     for attempt in 0..max_attempts {
-        // 3. 模型路由与配置解析
+        // 3. 模型路由解析
         let mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
             &model_name,
             &*state.custom_mapping.read().await,
-            &*state.openai_mapping.read().await,
-            &*state.anthropic_mapping.read().await,
-            false, // Gemini 请求不应用 Claude 家族映射
         );
         // 提取 tools 列表以进行联网探测 (Gemini 风格可能是嵌套的)
         let tools_val: Option<Vec<Value>> =
@@ -325,12 +322,7 @@ pub async fn handle_list_models(
     use crate::proxy::common::model_mapping::get_all_dynamic_models;
 
     // 获取所有动态模型列表（与 /v1/models 一致）
-    let model_ids = get_all_dynamic_models(
-        &state.openai_mapping,
-        &state.custom_mapping,
-        &state.anthropic_mapping,
-    )
-    .await;
+    let model_ids = get_all_dynamic_models(&state.custom_mapping).await;
 
     // 转换为 Gemini API 格式
     let models: Vec<_> = model_ids

@@ -510,6 +510,7 @@ fn build_system_instruction(system: &Option<SystemPrompt>, _model_name: &str) ->
     }
 
     Some(json!({
+        "role": "user",
         "parts": parts
     }))
 }
@@ -555,10 +556,22 @@ fn build_contents(
                             signature,
                             ..
                         } => {
-                            tracing::error!(
+                            tracing::debug!(
                                 "[DEBUG-TRANSFORM] Processing thinking block. Sig: {:?}",
                                 signature
                             );
+
+                            // [HOTFIX] Gemini Protocol Enforcement: Thinking block MUST be the first block.
+                            // If we already have content (like Text), we must downgrade this thinking block to Text.
+                            if !parts.is_empty() {
+                                tracing::warn!("[Claude-Request] Thinking block found at non-zero index (prev parts: {}). Downgrading to Text.", parts.len());
+                                if !thinking.is_empty() {
+                                    parts.push(json!({
+                                        "text": thinking
+                                    }));
+                                }
+                                continue;
+                            }
 
                             // [FIX] If thinking is disabled (smart downgrade), convert ALL thinking blocks to text
                             // to avoid "thinking is disabled but message contains thinking" error

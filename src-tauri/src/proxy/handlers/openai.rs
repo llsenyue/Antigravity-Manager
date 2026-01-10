@@ -7,6 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use base64::Engine as _;
+use bytes::Bytes;
 use serde_json::{json, Value};
 use tracing::{debug, error, info}; // Import Engine trait for encode method
 
@@ -55,13 +56,10 @@ pub async fn handle_chat_completions(
     let mut last_error = String::new();
 
     for attempt in 0..max_attempts {
-        // 2. 预解析模型路由与配置
+        // 2. 模型路由解析
         let mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
             &openai_req.model,
             &*state.custom_mapping.read().await,
-            &*state.openai_mapping.read().await,
-            &*state.anthropic_mapping.read().await,
-            false, // OpenAI 请求不应用 Claude 家族映射
         );
         // 将 OpenAI 工具转为 Value 数组以便探测联网
         let tools_val: Option<Vec<Value>> = openai_req
@@ -102,14 +100,22 @@ pub async fn handle_chat_completions(
             debug!("[OpenAI-Request] Transformed Gemini Body:\n{}", body_json);
         }
 
-        // 5. 发送请求
-        let list_response = openai_req.stream;
-        let method = if list_response {
+        // 5. 发送请求 - 自动转换逻辑
+        let client_wants_stream = openai_req.stream;
+        // [AUTO-CONVERSION] 非 Stream 请求自动转换为 Stream 以享受更宽松的配额
+        let force_stream_internally = !client_wants_stream;
+        let actual_stream = client_wants_stream || force_stream_internally;
+
+        if force_stream_internally {
+            info!("[OpenAI] 🔄 Auto-converting non-stream request to stream for better quota");
+        }
+
+        let method = if actual_stream {
             "streamGenerateContent"
         } else {
             "generateContent"
         };
-        let query_string = if list_response { Some("alt=sse") } else { None };
+        let query_string = if actual_stream { Some("alt=sse") } else { None };
 
         let response = match upstream
             .call_v1_internal(method, &access_token, gemini_body, query_string)
@@ -131,26 +137,62 @@ pub async fn handle_chat_completions(
         let status = response.status();
         if status.is_success() {
             // 5. 处理流式 vs 非流式
-            if list_response {
+            if actual_stream {
                 use crate::proxy::mappers::openai::streaming::create_openai_sse_stream;
                 use axum::body::Body;
                 use axum::response::Response;
-                // Removed redundant StreamExt
 
                 let gemini_stream = response.bytes_stream();
                 let openai_stream =
                     create_openai_sse_stream(Box::pin(gemini_stream), openai_req.model.clone());
-                let body = Body::from_stream(openai_stream);
 
-                return Ok(Response::builder()
-                    .header("Content-Type", "text/event-stream")
-                    .header("Cache-Control", "no-cache")
-                    .header("Connection", "keep-alive")
-                    .header("X-Account-Email", &email)
-                    .header("X-Mapped-Model", &mapped_model)
-                    .body(body)
-                    .unwrap()
-                    .into_response());
+                // 判断客户端期望的格式
+                if client_wants_stream {
+                    // 客户端本就要 Stream，直接返回 SSE
+                    let body = Body::from_stream(openai_stream);
+                    return Ok(Response::builder()
+                        .header("Content-Type", "text/event-stream")
+                        .header("Cache-Control", "no-cache")
+                        .header("Connection", "keep-alive")
+                        .header("X-Account-Email", &email)
+                        .header("X-Mapped-Model", &mapped_model)
+                        .body(body)
+                        .unwrap()
+                        .into_response());
+                } else {
+                    // 客户端要非 Stream，需要收集完整响应并转换为 JSON
+                    use crate::proxy::mappers::openai::collect_openai_stream_to_json;
+                    use futures::StreamExt;
+
+                    // 转换为 io::Error stream
+                    let sse_stream = openai_stream.map(|result| -> Result<Bytes, std::io::Error> {
+                        match result {
+                            Ok(bytes) => Ok(bytes),
+                            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+                        }
+                    });
+
+                    match collect_openai_stream_to_json(sse_stream).await {
+                        Ok(full_response) => {
+                            info!("[OpenAI] ✓ Stream collected and converted to JSON");
+                            return Ok((
+                                StatusCode::OK,
+                                [
+                                    ("X-Account-Email", email.as_str()),
+                                    ("X-Mapped-Model", mapped_model.as_str()),
+                                ],
+                                Json(full_response),
+                            )
+                                .into_response());
+                        }
+                        Err(e) => {
+                            return Err((
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("Stream collection error: {}", e),
+                            ));
+                        }
+                    }
+                }
             }
 
             let gemini_resp: Value = response
@@ -551,12 +593,10 @@ pub async fn handle_completions(
     let mut last_error = String::new();
 
     for _attempt in 0..max_attempts {
+        // 1. 模型路由解析
         let mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
             &openai_req.model,
             &*state.custom_mapping.read().await,
-            &*state.openai_mapping.read().await,
-            &*state.anthropic_mapping.read().await,
-            false, // OpenAI 请求不应用 Claude 家族映射
         );
         // 将 OpenAI 工具转为 Value 数组以便探测联网
         let tools_val: Option<Vec<Value>> = openai_req
@@ -698,12 +738,7 @@ pub async fn handle_completions(
 pub async fn handle_list_models(State(state): State<AppState>) -> impl IntoResponse {
     use crate::proxy::common::model_mapping::get_all_dynamic_models;
 
-    let model_ids = get_all_dynamic_models(
-        &state.openai_mapping,
-        &state.custom_mapping,
-        &state.anthropic_mapping,
-    )
-    .await;
+    let model_ids = get_all_dynamic_models(&state.custom_mapping).await;
 
     let data: Vec<_> = model_ids
         .into_iter()
