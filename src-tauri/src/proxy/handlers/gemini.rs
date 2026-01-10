@@ -3,7 +3,7 @@ use axum::{
     body::Body,
     extract::State,
     extract::{Json, Path},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use serde_json::{json, Value};
@@ -19,6 +19,7 @@ const MAX_RETRY_ATTEMPTS: usize = 3;
 /// 路径参数: model_name, method (e.g. "gemini-pro", "generateContent")
 pub async fn handle_generate(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(model_action): Path<String>,
     Json(body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
@@ -84,24 +85,50 @@ pub async fn handle_generate(
         );
 
         // 4. 获取 Token (使用准确的 request_type)
-        // 提取 SessionId (粘性指纹)
-        let session_id = SessionManager::extract_gemini_session_id(&body, &model_name);
+        // [NEW] 检查是否有 X-Force-Account-Email header (用于预热等需要指定账号的场景)
+        let force_account_email = headers
+            .get("x-force-account-email")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
 
-        // 关键：在重试尝试 (attempt > 0) 时强制轮换账号
-        let (access_token, project_id, email) = match token_manager
-            .get_token(&config.request_type, attempt > 0, Some(&session_id))
-            .await
-        {
-            Ok(t) => t,
-            Err(e) => {
-                return Err((
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!("Token error: {}", e),
-                ));
+        let (access_token, project_id, email) = if let Some(email) = &force_account_email {
+            // 使用指定的账号
+            match token_manager.get_token_by_email(email).await {
+                Ok(t) => t,
+                Err(e) => {
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        format!("Forced account error ({}): {}", email, e),
+                    ));
+                }
+            }
+        } else {
+            // 正常账号选择逻辑
+            let session_id = SessionManager::extract_gemini_session_id(&body, &model_name);
+            match token_manager
+                .get_token(&config.request_type, attempt > 0, Some(&session_id))
+                .await
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        format!("Token error: {}", e),
+                    ));
+                }
             }
         };
 
-        info!("✓ Using account: {} (type: {})", email, config.request_type);
+        info!(
+            "✓ Using account: {} (type: {}{})",
+            email,
+            config.request_type,
+            if force_account_email.is_some() {
+                " [FORCED]"
+            } else {
+                ""
+            }
+        );
 
         // 5. 包装请求 (project injection)
         let wrapped_body = wrap_request(&body, &project_id, &mapped_model);
@@ -114,15 +141,23 @@ pub async fn handle_generate(
             "generateContent"
         };
 
+        info!(
+            "[Gemini] Calling upstream: {} for {}",
+            upstream_method, email
+        );
+
         let response = match upstream
             .call_v1_internal(upstream_method, &access_token, wrapped_body, query_string)
             .await
         {
-            Ok(r) => r,
+            Ok(r) => {
+                info!("[Gemini] Upstream response received: HTTP {}", r.status());
+                r
+            }
             Err(e) => {
                 last_error = e.clone();
-                debug!(
-                    "Gemini Request failed on attempt {}/{}: {}",
+                info!(
+                    "[Gemini] ✗ Request failed on attempt {}/{}: {}",
                     attempt + 1,
                     max_attempts,
                     e

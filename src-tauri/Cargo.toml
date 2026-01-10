@@ -67,3 +67,7 @@ socket2 = "0.6.1"
 # TokenPool 远程接入模块
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 futures-util = "0.3"
+
+# [OPTIMIZATION] Windows Linker Optimization
+[profile.dev]
+split-debuginfo = "unpacked"

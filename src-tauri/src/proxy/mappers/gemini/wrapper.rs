@@ -94,7 +94,19 @@ pub fn wrap_request(body: &Value, project_id: &str, mapped_model: &str) -> Value
             if let Some(gen_obj) = gen_config.as_object_mut() {
                 gen_obj.remove("thinkingConfig");
                 gen_obj.remove("responseMimeType");
-                gen_obj.remove("responseModalities"); // Cherry Studio sends this, might conflict
+
+                // [FIX] 保留 responseModalities: ["TEXT"] 用于预热 (低消耗模式)
+                // 只有当它不是 ["TEXT"] 时才移除 (防止 Cherry Studio 冲突)
+                let preserve_modalities = gen_obj
+                    .get("responseModalities")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.len() == 1 && arr[0].as_str() == Some("TEXT"))
+                    .unwrap_or(false);
+
+                if !preserve_modalities {
+                    gen_obj.remove("responseModalities");
+                }
+
                 gen_obj.insert("imageConfig".to_string(), image_config);
             }
         }

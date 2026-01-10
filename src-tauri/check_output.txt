@@ -1,0 +1,43 @@
+    Checking antigravity_tools v3.3.17 (F:\backup\home\llsenyue\project\Antigravity-Manager-Doctor\src-tauri)
+warning: unused import: `thinking_utils::close_tool_loop_for_thinking`
+  --> src\proxy\mappers\claude\mod.rs:15:9
+   |
+15 | pub use thinking_utils::close_tool_loop_for_thinking;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `Arc`
+ --> src\proxy\signature_cache.rs:2:17
+  |
+2 | use std::sync::{Arc, Mutex, OnceLock};
+  |                 ^^^
+
+error[E0382]: borrow of moved value: `series_key`
+   --> src\modules\quota.rs:362:74
+    |
+345 |                 let series_key = if m.name.to_lowercase().contains("image") {
+    |                     ---------- move occurs because `series_key` has type `std::string::String`, which does not implement the `Copy` trait
+...
+361 |                     warmed_series.insert(series_key);
+    |                                          ---------- value moved here
+362 |                     tracing::debug!("[Warmup] 璁″垝棰勭儹 {} (绯诲垪: {})", m.name, series_key);
+    |                                                                                ^^^^^^^^^^ value borrowed here after move
+    |
+    = note: this error originates in the macro `$crate::__macro_support::format_args` which comes from the expansion of the macro `tracing::debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider cloning the value if the performance cost is acceptable
+    |
+361 |                     warmed_series.insert(series_key.clone());
+    |                                                    ++++++++
+
+warning: unused variable: `model_name`
+   --> src\proxy\mappers\claude\request.rs:456:60
+    |
+456 | fn build_system_instruction(system: &Option<SystemPrompt>, model_name: &str) -> Option<Value> {
+    |                                                            ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_model_name`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+For more information about this error, try `rustc --explain E0382`.
+warning: `antigravity_tools` (lib) generated 3 warnings
+error: could not compile `antigravity_tools` (lib) due to 1 previous error; 3 warnings emitted
