@@ -1,6 +1,6 @@
 # Antigravity Tools 🚀
 >
-> 专业的 AI 账号管理与协议反代系统 (v3.3.20)
+> 专业的 AI 账号管理与协议反代系统 (v3.3.21)
 <div align="center">
   <img src="public/icon.png" alt="Antigravity Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
 
@@ -9,7 +9,7 @@
   
   <p>
     <a href="https://github.com/lbjlaq/Antigravity-Manager">
-      <img src="https://img.shields.io/badge/Version-3.3.20-blue?style=flat-square" alt="Version">
+      <img src="https://img.shields.io/badge/Version-3.3.21-blue?style=flat-square" alt="Version">
     </a>
     <img src="https://img.shields.io/badge/Tauri-v2-orange?style=flat-square" alt="Tauri">
     <img src="https://img.shields.io/badge/Backend-Rust-red?style=flat-square" alt="Rust">
@@ -202,6 +202,26 @@ print(response.choices[0].message.content)
 ## 📝 开发者与社区
 
 * **版本演进 (Changelog)**:
+  * **v3.3.21 (2026-01-10) - Fork 独有版本**:
+    * **🔥 智能高峰期预热调度 (Scheduled Warmup)**:
+      * **核心问题**: Gemini API 配额采用 5 小时滑动窗口重置机制。如果在高峰期使用时配额恰好重置，将无法立即获得 100% 配额。
+      * **解决方案**: 在高峰期前 5 小时自动向每个账号发送少量请求（约 50 token），"触发"配额重置计时器，确保在高峰期配额已完全恢复。
+      * **配置选项**:
+        * **高峰时间点**: 支持配置 3 个高峰期（如 10:00、15:00、21:00），系统自动计算预热触发时间
+        * **独立开关**: 每个高峰期可单独启用/禁用
+        * **一键预热**: 账号管理页支持手动触发全账号预热（用于测试或紧急情况）
+      * **核心改动**:
+        * 新增 `src-tauri/src/proxy/handlers/warmup.rs` - 预热请求处理器
+        * 新增 `X-Force-Account-Email` header 支持，用于强制使用指定账号
+        * 修改 `token_manager.rs` 添加 `get_token_by_email` 方法
+        * 前端 Settings 页面添加预热调度配置 UI
+      * **工作原理**:
+        * 预热请求使用 `gemini-2.5-flash-lite` 模型（最低配额消耗）
+        * 每账号发送约 50 token 的简单请求
+        * 触发 Gemini API 开始 5 小时配额重置倒计时
+        * 高峰期到来时配额已 100% 恢复
+      * **配置入口**: 设置 → 账号 → 智能高峰期预热调度器
+      * **影响范围**: 此功能确保了多账号环境下的最优配额利用率，特别适合有固定工作时间段的用户。
   * **v3.3.20 (2026-01-09)**:
     * **请求超时配置优化 (Request Timeout Enhancement) - 支持长时间文本处理 (核心致谢 @xiaoyaocp Issue #473)**:
       * **提升超时上限**: 将服务配置中的请求超时最大值从 600 秒（10 分钟）提升到 3600 秒（1 小时）。
@@ -227,25 +247,6 @@ print(response.choices[0].message.content)
       * **客户端透明**: 无需任何修改，完全向后兼容
       * **日志标识**: `🔄 Auto-converting non-stream request to stream` / `✓ Stream collected and converted to JSON`
       * **影响范围**: 此功能显著提升了 Python SDK、Claude CLI 等非流式客户端的稳定性，彻底解决了长期困扰用户的 429 配额问题。
-    * **🔥 智能高峰期预热调度 (Scheduled Warmup) - Fork 独有功能**:
-      * **核心问题**: Gemini API 配额采用 5 小时滑动窗口重置机制。如果在高峰期使用时配额恰好重置，将无法立即获得 100% 配额。
-      * **解决方案**: 在高峰期前 5 小时自动向每个账号发送少量请求（约 50 token），"触发"配额重置计时器，确保在高峰期配额已完全恢复。
-      * **配置选项**:
-        * **高峰时间点**: 支持配置 3 个高峰期（如 10:00、15:00、21:00），系统自动计算预热触发时间
-        * **独立开关**: 每个高峰期可单独启用/禁用
-        * **一键预热**: 账号管理页支持手动触发全账号预热（用于测试或紧急情况）
-      * **核心改动**:
-        * 新增 `src-tauri/src/proxy/handlers/warmup.rs` - 预热请求处理器
-        * 新增 `X-Force-Account-Email` header 支持，用于强制使用指定账号
-        * 修改 `token_manager.rs` 添加 `get_token_by_email` 方法
-        * 前端 Settings 页面添加预热调度配置 UI
-      * **工作原理**:
-        * 预热请求使用 `gemini-2.5-flash-lite` 模型（最低配额消耗）
-        * 每账号发送约 50 token 的简单请求
-        * 触发 Gemini API 开始 5 小时配额重置倒计时
-        * 高峰期到来时配额已 100% 恢复
-      * **配置入口**: 设置 → 账号 → 智能高峰期预热调度器
-      * **影响范围**: 此功能确保了多账号环境下的最优配额利用率，特别适合有固定工作时间段的用户。
     * **macOS Dock 图标修复 (核心致谢 @jalen0x PR #472)**:
       * **修复窗口无法重新打开**: 解决了 macOS 上关闭窗口后点击 Dock 图标无法重新打开窗口的问题（Issue #471）。
       * **RunEvent::Reopen 处理**: 将 `.run()` 改为 `.build().run()` 模式，添加 `RunEvent::Reopen` 事件处理器。
