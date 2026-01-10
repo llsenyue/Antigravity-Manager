@@ -273,6 +273,29 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         try {
             const result = await accountService.warmUpAccounts();
             console.log('[AccountStore] Warm-up started:', result);
+            
+            // 预热是异步执行的，启动定时刷新以便及时更新界面
+            // 每 5 秒刷新一次，持续 2 分钟（24 次）
+            const MAX_REFRESH_COUNT = 24;
+            let refreshCount = 0;
+            
+            const refreshInterval = setInterval(async () => {
+                refreshCount++;
+                console.log(`[AccountStore] Auto-refresh after warmup (${refreshCount}/${MAX_REFRESH_COUNT})`);
+                await get().fetchAccounts();
+                
+                // 检查是否所有模型都已预热（没有 100% 的模型）
+                const { accounts } = get();
+                const has100PercentModels = accounts.some(acc => 
+                    acc.quota?.models?.some(m => m.percentage === 100)
+                );
+                
+                if (!has100PercentModels || refreshCount >= MAX_REFRESH_COUNT) {
+                    console.log('[AccountStore] Stopping auto-refresh after warmup');
+                    clearInterval(refreshInterval);
+                }
+            }, 5000);
+            
             return result;
         } catch (error) {
             console.error('[AccountStore] Warm-up failed:', error);

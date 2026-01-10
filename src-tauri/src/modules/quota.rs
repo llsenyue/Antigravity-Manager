@@ -52,6 +52,12 @@ fn create_client() -> reqwest::Client {
     crate::utils::http::create_client(15)
 }
 
+/// 创建预热专用的 HTTP 客户端（超时时间更长）
+/// 因为预热需要：Token 刷新（2-3秒） + API 调用（数秒），需要足够的超时时间
+fn create_warmup_client() -> reqwest::Client {
+    crate::utils::http::create_client(60) // 60 秒超时
+}
+
 const CLOUD_CODE_BASE_URL: &str = "https://cloudcode-pa.googleapis.com";
 
 /// 获取项目 ID 和订阅类型
@@ -260,6 +266,169 @@ pub async fn fetch_all_quotas(
     results
 }
 
+/// 获取有效的 access_token 用于预热（自动刷新过期 token）
+async fn get_valid_token_for_warmup(
+    account: &crate::models::Account,
+) -> Result<(String, String), String> {
+    let now = chrono::Utc::now().timestamp();
+    let token_data = &account.token;
+
+    // 使用 expiry_timestamp 判断 token 是否过期
+    let expires_at = token_data.expiry_timestamp;
+
+    // 如果 token 还有超过 5 分钟有效期，直接使用
+    if now < expires_at - 300 {
+        let project_id = token_data
+            .project_id
+            .clone()
+            .unwrap_or_else(|| "bamboo-precept-lgxtn".to_string());
+        return Ok((token_data.access_token.clone(), project_id));
+    }
+
+    // Token 即将过期，需要刷新
+    tracing::info!(
+        "[Warmup] Token for {} is expiring, refreshing...",
+        account.email
+    );
+
+    let token_response = crate::modules::oauth::refresh_access_token(&token_data.refresh_token)
+        .await
+        .map_err(|e| format!("Token refresh failed for {}: {}", account.email, e))?;
+
+    tracing::info!("[Warmup] Token refresh successful for {}", account.email);
+
+    // 保存刷新后的 token 到磁盘
+    if let Err(e) = save_refreshed_token_to_disk(&account.id, &token_response).await {
+        tracing::warn!("[Warmup] Failed to save refreshed token: {}", e);
+    }
+
+    let project_id = token_data
+        .project_id
+        .clone()
+        .unwrap_or_else(|| "bamboo-precept-lgxtn".to_string());
+
+    Ok((token_response.access_token, project_id))
+}
+
+/// 保存刷新后的 token 到磁盘
+async fn save_refreshed_token_to_disk(
+    account_id: &str,
+    token_response: &crate::modules::oauth::TokenResponse,
+) -> Result<(), String> {
+    // 获取数据目录
+    let data_dir = crate::modules::account::get_data_dir()
+        .map_err(|e| format!("Cannot get data dir: {}", e))?;
+    let accounts_dir = data_dir.join("accounts");
+    let account_file = accounts_dir.join(format!("{}.json", account_id));
+
+    if !account_file.exists() {
+        return Err(format!("Account file not found: {:?}", account_file));
+    }
+
+    // 读取并更新账号文件
+    let content =
+        std::fs::read_to_string(&account_file).map_err(|e| format!("Read error: {}", e))?;
+    let mut account_json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Parse error: {}", e))?;
+
+    if let Some(token) = account_json.get_mut("token") {
+        token["access_token"] = serde_json::Value::String(token_response.access_token.clone());
+        token["expires_in"] = serde_json::Value::Number(token_response.expires_in.into());
+        token["timestamp"] =
+            serde_json::Value::Number(chrono::Utc::now().timestamp_millis().into());
+    }
+
+    std::fs::write(
+        &account_file,
+        serde_json::to_string_pretty(&account_json).unwrap(),
+    )
+    .map_err(|e| format!("Write error: {}", e))?;
+
+    Ok(())
+}
+
+/// 通过代理内部 API 发送预热请求
+///
+/// 关键设计：
+/// - 调用代理的 `/internal/warmup` 端点
+/// - 完全复用代理的所有逻辑：token 获取、UpstreamClient、端点 Fallback
+/// - 不做模型映射，直接使用原始模型名称
+async fn warmup_model_directly(
+    _access_token: &str, // 不再使用，由代理自动处理
+    model_name: &str,
+    _project_id: &str, // 不再使用，由代理自动处理
+    email: &str,
+    percentage: i32,
+) -> bool {
+    // 代理默认端口
+    const PROXY_PORT: u16 = 8045;
+
+    let warmup_url = format!("http://127.0.0.1:{}/internal/warmup", PROXY_PORT);
+
+    // 构建预热请求体
+    let body = json!({
+        "email": email,
+        "model": model_name
+    });
+
+    tracing::info!(
+        "[Warmup] Calling /internal/warmup: {} -> {} (was {}%)",
+        email,
+        model_name,
+        percentage
+    );
+
+    let client = create_warmup_client(); // 使用预热专用客户端（60 秒超时）
+    let resp = client
+        .post(&warmup_url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await;
+
+    match resp {
+        Ok(response) => {
+            let status = response.status();
+            if status.is_success() {
+                tracing::info!(
+                    "[Warmup] ✓ Triggered {} for {} (was {}%)",
+                    model_name,
+                    email,
+                    percentage
+                );
+                true
+            } else {
+                let text = response.text().await.unwrap_or_default();
+                // 截断错误信息
+                let truncated = if text.len() > 200 {
+                    &text[..200]
+                } else {
+                    &text
+                };
+                tracing::warn!(
+                    "[Warmup] ✗ {} for {} (was {}%): HTTP {} - {}...",
+                    model_name,
+                    email,
+                    percentage,
+                    status,
+                    truncated
+                );
+                false
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                "[Warmup] ✗ {} for {} (was {}%): {}",
+                model_name,
+                email,
+                percentage,
+                e
+            );
+            false
+        }
+    }
+}
+
 /// 一键预热所有账号 - 触发5小时配额恢复周期
 /// 支持临界值重试：当模型配额接近100%但未达到时（95-99%），等待后重试
 pub async fn warm_up_all_accounts() -> Result<String, String> {
@@ -297,92 +466,172 @@ async fn warm_up_all_accounts_with_retry(retry_count: u32) -> Result<String, Str
         return Err("没有 Pro/Ultra 账号".to_string());
     }
 
-    let upstream = std::sync::Arc::new(crate::proxy::upstream::client::UpstreamClient::new(None));
-    let total_tasks = pro_ultra_accounts.len() * 4;
-    let (tx, mut _rx) = tokio::sync::mpsc::channel(total_tasks);
+    tracing::info!(
+        "[Warmup] 开始预热 {} 个 Pro/Ultra 账号",
+        pro_ultra_accounts.len()
+    );
+
+    // [FIX] 添加并发控制，避免触发 429 速率限制
+    let _semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(2)); // 最多 2 个并发请求
 
     let mut has_models_to_warm = false;
     let mut has_near_ready_models = false;
 
-    for account in &pro_ultra_accounts {
-        let access_token = account.token.access_token.clone();
-        let upstream = upstream.clone();
-        let tx = tx.clone();
-        let project_id = "bamboo-precept-lgxtn";
+    // 收集需要预热的模型信息（email, model_name, percentage）
+    let mut warmup_items: Vec<(String, String, String, String, i32)> = Vec::new(); // (email, model_name, access_token, project_id, percentage)
 
-        // Smart Warm-up: Only warmup models at 100% (not in cooldown)
-        let mut models_to_warm: Vec<(String, i32)> = Vec::new();
-        if let Some(quota) = &account.quota {
-            for m in &quota.models {
-                if m.percentage >= 100 {
-                    models_to_warm.push((m.name.clone(), m.percentage));
-                } else if m.percentage >= NEAR_READY_THRESHOLD {
-                    // 临界状态：配额接近100%，可能正在恢复中
-                    tracing::info!(
-                        "[Warmup] Model {} at {}% - near ready, may retry",
-                        m.name,
-                        m.percentage
-                    );
-                    has_near_ready_models = true;
-                } else {
-                    tracing::info!(
-                        "[Warmup] Skipping {} ({}% - already in cooldown)",
-                        m.name,
-                        m.percentage
-                    );
+    for account in &pro_ultra_accounts {
+        // [REFACTORED] Step 1: 获取有效 token（自动刷新过期的）
+        let (access_token, project_id) = match get_valid_token_for_warmup(account).await {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("[Warmup] 获取账号 {} 有效 token 失败: {}", account.email, e);
+                continue;
+            }
+        };
+
+        // [Step 2] 使用有效 token 获取实时配额
+        tracing::info!("[Warmup] 正在获取账号 {} 的最新配额...", account.email);
+        let fresh_quota =
+            match fetch_quota_with_cache(&access_token, &account.email, Some(&project_id)).await {
+                Ok((quota, _)) => quota,
+                Err(e) => {
+                    tracing::warn!("[Warmup] 获取账号 {} 配额失败: {}", account.email, e);
+                    continue;
                 }
+            };
+
+        let model_count = fresh_quota.models.len();
+        tracing::info!(
+            "[Warmup] 账号 {} 有 {} 个模型（实时获取）",
+            account.email,
+            model_count
+        );
+
+        // [Step 3] 筛选 100% 的模型（移除系列去重，因为每个模型有独立配额）
+        for m in &fresh_quota.models {
+            tracing::debug!(
+                "[Warmup][DEBUG] 模型: {} | 配额: {}% | 重置时间: {:?}",
+                m.name,
+                m.percentage,
+                m.reset_time
+            );
+
+            if m.percentage >= 100 {
+                // 跳过 gemini-2.5-pro：该模型配额很少，预热后瞬间变 0%，没有预热价值
+                if m.name == "gemini-2.5-pro" {
+                    tracing::debug!("[Warmup] 跳过 {} (配额少，预热无意义)", m.name);
+                    continue;
+                }
+
+                // 每个模型独立预热，不做系列去重
+                warmup_items.push((
+                    account.email.clone(),
+                    m.name.clone(),
+                    access_token.clone(),
+                    project_id.clone(),
+                    m.percentage,
+                ));
+                tracing::debug!("[Warmup] 计划预热 {}", m.name);
+            } else if m.percentage >= NEAR_READY_THRESHOLD {
+                has_near_ready_models = true;
             }
         }
+    }
 
-        if models_to_warm.is_empty() {
-            continue;
-        }
-
+    if !warmup_items.is_empty() {
         has_models_to_warm = true;
+    }
 
-        for (model_name, pct) in models_to_warm {
-            let at = access_token.clone();
-            let up = upstream.clone();
-            let txc = tx.clone();
-            let m_name = model_name.clone();
+    // 执行预热任务（支持自动重试）
+    if !warmup_items.is_empty() {
+        let total_count = warmup_items.len();
+        tokio::spawn(async move {
+            const MAX_RETRY: usize = 3;
+            const RETRY_DELAY_SECS: u64 = 5;
 
-            tokio::spawn(async move {
-                let is_image = m_name.to_lowercase().contains("image");
+            let mut success_count = 0;
+            let mut final_fail_count = 0;
 
-                let body = if is_image {
-                    serde_json::json!({
-                        "project": project_id,
-                        "model": m_name,
-                        "request": {
-                            "contents": [{ "role": "user", "parts": [{ "text": "Reply with a single word: OK" }] }],
-                            "generationConfig": {
-                                "maxOutputTokens": 1,
-                                "responseModalities": ["TEXT"]
-                            }
-                        }
-                    })
-                } else {
-                    serde_json::json!({
-                        "project": project_id,
-                        "model": m_name,
-                        "request": {
-                            "contents": [{ "role": "user", "parts": [{ "text": "." }] }],
-                            "generationConfig": { "maxOutputTokens": 1 }
-                        }
-                    })
-                };
+            // 当前需要预热的模型列表
+            let mut current_items = warmup_items;
+            let mut retry_round = 0;
 
-                let res = up
-                    .call_v1_internal("generateContent", &at, body, None)
-                    .await;
-
-                match &res {
-                    Ok(_) => tracing::info!("[Warmup] ✓ {} (was {}%)", m_name, pct),
-                    Err(e) => tracing::warn!("[Warmup] ✗ {} (was {}%): {}", m_name, pct, e),
+            while !current_items.is_empty() && retry_round <= MAX_RETRY {
+                if retry_round > 0 {
+                    tracing::info!(
+                        "[Warmup] === 重试第 {}/{} 轮：{} 个失败模型 ===",
+                        retry_round,
+                        MAX_RETRY,
+                        current_items.len()
+                    );
+                    // 重试前等待 5 秒
+                    tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY_SECS)).await;
                 }
-                let _ = txc.send(format!("{}: {}", m_name, res.is_ok())).await;
-            });
-        }
+
+                let mut failed_items: Vec<(String, String, String, String, i32)> = Vec::new();
+                let round_total = current_items.len();
+
+                for (idx, (email, model_name, token, pid, pct)) in
+                    current_items.into_iter().enumerate()
+                {
+                    tracing::info!(
+                        "[Warmup] 执行 {}/{} (轮次 {}): {} / {}",
+                        idx + 1,
+                        round_total,
+                        retry_round,
+                        email,
+                        model_name
+                    );
+
+                    let result =
+                        warmup_model_directly(&token, &model_name, &pid, &email, pct).await;
+
+                    if result {
+                        success_count += 1;
+                        tracing::info!("[Warmup] ✓ {} / {} 成功", email, model_name);
+                    } else {
+                        tracing::warn!(
+                            "[Warmup] ✗ {} / {} 失败，将在下一轮重试",
+                            email,
+                            model_name
+                        );
+                        // 保存失败项以便重试
+                        failed_items.push((email, model_name, token, pid, pct));
+                    }
+
+                    // 每个请求间隔 3 秒 + 随机抖动
+                    if idx < round_total - 1 {
+                        use rand::Rng;
+                        let base_delay = 3000;
+                        let jitter = rand::thread_rng().gen_range(0..1000);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(base_delay + jitter))
+                            .await;
+                    }
+                }
+
+                // 更新当前待处理列表
+                current_items = failed_items;
+                retry_round += 1;
+            }
+
+            // 统计最终失败数
+            final_fail_count = current_items.len();
+
+            tracing::info!(
+                "[Warmup] ========== 预热完成 ==========\n  成功: {}\n  失败: {}\n  总计: {}\n  重试轮次: {}",
+                success_count,
+                final_fail_count,
+                total_count,
+                retry_round.saturating_sub(1)
+            );
+
+            // 刷新配额（成功后立即刷新，让界面显示最新状态）
+            tracing::info!("[Warmup] 正在刷新配额...");
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            let _ = crate::commands::refresh_all_quotas().await;
+            tracing::info!("[Warmup] ✅ 配额刷新完成");
+        });
     }
 
     // 临界值重试逻辑：如果有模型接近恢复且没有模型需要预热，等待后重试
@@ -440,24 +689,59 @@ pub async fn warm_up_account(account_id: &str) -> Result<String, String> {
         .find(|a| a.id == account_id)
         .ok_or_else(|| "账号不存在".to_string())?;
 
-    let upstream = std::sync::Arc::new(crate::proxy::upstream::client::UpstreamClient::new(None));
-    let access_token = account.token.access_token.clone();
-    let project_id = "bamboo-precept-lgxtn";
+    // [REFACTORED] Step 1: 获取有效 token（自动刷新过期的）
+    let (access_token, project_id) = get_valid_token_for_warmup(&account)
+        .await
+        .map_err(|e| format!("获取有效 token 失败: {}", e))?;
 
-    // Smart Warm-up: Only warmup models at 100% (not in cooldown)
+    // [Step 2] 使用有效 token 获取实时配额
+    tracing::info!("[Warmup] 正在获取账号 {} 的最新配额...", account.email);
+    let fresh_quota =
+        match fetch_quota_with_cache(&access_token, &account.email, Some(&project_id)).await {
+            Ok((quota, _)) => quota,
+            Err(e) => return Err(format!("获取配额失败: {}", e)),
+        };
+
+    let model_count = fresh_quota.models.len();
+    tracing::info!(
+        "[Warmup] 账号 {} 有 {} 个模型（实时获取）",
+        account.email,
+        model_count
+    );
+
+    // [DEBUG] 打印所有模型的配额信息
+    for m in &fresh_quota.models {
+        tracing::info!(
+            "[Warmup][DEBUG] 模型: {} | 配额: {}% | 重置时间: {}",
+            m.name,
+            m.percentage,
+            m.reset_time
+        );
+    }
+
+    // [Step 3] 筛选 100% 的模型并应用去重逻辑
     let mut models_to_warm: Vec<(String, i32)> = Vec::new();
+    let mut warmed_series = std::collections::HashSet::new(); // 用于记录已预热的系列
 
-    if let Some(quota) = &account.quota {
-        for m in &quota.models {
-            // Only warmup if at 100% (not already in 5h cooldown)
-            if m.percentage >= 100 {
-                models_to_warm.push((m.name.clone(), m.percentage));
+    for m in &fresh_quota.models {
+        if m.percentage >= 100 {
+            // 确定模型系列 Key
+            let series_key = if m.name.to_lowercase().contains("image") {
+                format!("image-{}", m.name) // Image 模型总是单独预热
+            } else if m.name.to_lowercase().contains("claude") {
+                "claude-series".to_string()
+            } else if m.name.to_lowercase().contains("gemini-2.5") {
+                "gemini-2.5-series".to_string()
+            } else if m.name.to_lowercase().contains("gemini-3") {
+                "gemini-3-series".to_string()
             } else {
-                tracing::info!(
-                    "[Warmup] Skipping {} ({}% - already in cooldown)",
-                    m.name,
-                    m.percentage
-                );
+                m.name.clone()
+            };
+
+            // 如果该系列尚未预热，则加入列表
+            if !warmed_series.contains(&series_key) {
+                models_to_warm.push((m.name.clone(), m.percentage));
+                warmed_series.insert(series_key);
             }
         }
     }
@@ -468,57 +752,27 @@ pub async fn warm_up_account(account_id: &str) -> Result<String, String> {
 
     let warmed_count = models_to_warm.len();
 
-    for (model_name, pct) in models_to_warm {
-        let at = access_token.clone();
-        let up = upstream.clone();
-        let m_name = model_name.clone();
+    // [REFACTORED] Step 4: 直接调用 Google API 预热，不经过本地代理
+    let email = account.email.clone();
+    let token = access_token.clone();
+    let pid = project_id.clone();
 
-        tokio::spawn(async move {
-            let is_image = m_name.to_lowercase().contains("image");
+    tokio::spawn(async move {
+        for (model_name, pct) in models_to_warm {
+            // 直接调用 Google API，不经过本地代理
+            warmup_model_directly(&token, &model_name, &pid, &email, pct).await;
 
-            // Use minimal request with maxOutputTokens=1 for all models
-            let body = if is_image {
-                // For image models, request minimal text output (not image generation)
-                serde_json::json!({
-                    "project": project_id,
-                    "model": m_name,
-                    "request": {
-                        "contents": [{ "role": "user", "parts": [{ "text": "Reply with a single word: OK" }] }],
-                        "generationConfig": {
-                            "maxOutputTokens": 1,
-                            "responseModalities": ["TEXT"]
-                        }
-                    }
-                })
-            } else {
-                // For text models, use minimal generateContent
-                serde_json::json!({
-                    "project": project_id,
-                    "model": m_name,
-                    "request": {
-                        "contents": [{ "role": "user", "parts": [{ "text": "." }] }],
-                        "generationConfig": { "maxOutputTokens": 1 }
-                    }
-                })
-            };
+            // 请求间隔
+            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+        }
 
-            let result = up
-                .call_v1_internal("generateContent", &at, body, None)
-                .await;
-
-            match result {
-                Ok(_) => tracing::info!("[Warmup] ✓ Triggered {} (was {}%)", m_name, pct),
-                Err(e) => tracing::warn!("[Warmup] ✗ Failed {} (was {}%): {}", m_name, pct, e),
-            }
-        });
-    }
-
-    // Schedule auto-refresh after warmup completes (5 seconds delay)
-    tokio::spawn(async {
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        tracing::info!("[Warmup] Auto-refreshing all account quotas after warmup...");
-        let _ = crate::commands::refresh_all_quotas().await;
-        tracing::info!("[Warmup] Auto-refresh completed");
+        // [FIX] 预热完成后立即刷新配额
+        tracing::info!("[Warmup] 正在刷新账号配额...");
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        match crate::commands::refresh_all_quotas().await {
+            Ok(_) => tracing::info!("[Warmup] ✅ 配额刷新完成"),
+            Err(e) => tracing::warn!("[Warmup] ⚠️ 配额刷新失败: {}", e),
+        }
     });
 
     Ok(format!("已启动 {} 个模型的预热任务", warmed_count))
