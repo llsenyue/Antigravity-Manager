@@ -1,6 +1,6 @@
 # Antigravity Tools 🚀
 >
-> 专业的 AI 账号管理与协议反代系统 (v3.3.22)
+> 专业的 AI 账号管理与协议反代系统 (v3.3.23)
 <div align="center">
   <img src="public/icon.png" alt="Antigravity Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
 
@@ -9,7 +9,7 @@
   
   <p>
     <a href="https://github.com/lbjlaq/Antigravity-Manager">
-      <img src="https://img.shields.io/badge/Version-3.3.22-blue?style=flat-square" alt="Version">
+      <img src="https://img.shields.io/badge/Version-3.3.23-blue?style=flat-square" alt="Version">
     </a>
     <img src="https://img.shields.io/badge/Tauri-v2-orange?style=flat-square" alt="Tauri">
     <img src="https://img.shields.io/badge/Backend-Rust-red?style=flat-square" alt="Rust">
@@ -202,6 +202,13 @@ print(response.choices[0].message.content)
 ## 📝 开发者与社区
 
 * **版本演进 (Changelog)**:
+  * **v3.3.23 (2026-01-12) - Fork 独有版本**:
+    * **🔧 预热功能增强与上游合并 (Warmup Enhancement & Upstream Merge)**:
+      * **恢复预热 UI**: 合并上游 v3.3.21 更新后，恢复了本地独有的预热功能 UI（Settings.tsx、Accounts.tsx、AccountTable.tsx、AccountGrid.tsx）。
+      * **单账号预热重试机制**: 为单账号预热添加与一键预热相同的重试逻辑（最多 3 轮重试，每轮间隔 5 秒），提升预热成功率。
+      * **集成上游设备指纹功能**: 从上游合并了设备指纹（Device Fingerprint）功能，账号管理页新增指纹按钮和对话框。
+      * **上游更新合并**: 合并了上游 v3.3.21 的所有更新，包括 Claude 请求处理优化、弹性恢复、智能截断、429 修复等。
+      * **影响范围**: 此版本确保了 Fork 独有功能与上游更新的完美融合，保留了预热调度等核心特性。
   * **v3.3.22 (2026-01-10) - Fork 独有版本**:
     * **🔧 预热调度机制增强 (Warmup Queue Enhancement)**:
       * **跨日高峰支持**: 使用时间戳替代分钟数+日期字符串，正确处理如"次日 03:00 高峰，前一天 22:00 触发"的跨日场景。

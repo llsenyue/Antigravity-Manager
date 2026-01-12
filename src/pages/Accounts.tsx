@@ -757,6 +757,7 @@ function Accounts() {
                             onSwitch={handleSwitch}
                             onRefresh={handleRefresh}
                             onWarmUp={handleWarmUp}
+                            onViewDevice={handleViewDevice}
                             onViewDetails={handleViewDetails}
                             onExport={handleExportOne}
                             onDelete={handleDelete}
