@@ -20,6 +20,16 @@ function Settings() {
         refresh_interval: 15,
         auto_sync: false,
         sync_interval: 5,
+        scheduled_warmup: {
+            enabled: false,
+            schedules: {
+                'default': [
+                    { start: '10:00', end: '10:00', enabled: true },
+                    { start: '15:00', end: '15:00', enabled: true },
+                    { start: '21:00', end: '21:00', enabled: true }
+                ]
+            }
+        },
         proxy: {
             enabled: false,
             port: 8080,
@@ -55,24 +65,6 @@ function Settings() {
         invoke<string>('get_data_dir_path')
             .then(path => setDataDirPath(path))
             .catch(err => console.error('Failed to get data dir:', err));
-
-        // 加载更新设置
-        invoke<{ auto_check: boolean; last_check_time: number; check_interval_hours: number }>('get_update_settings')
-            .then(settings => {
-                setFormData(prev => ({
-                    ...prev,
-                    auto_check_update: settings.auto_check,
-                    update_check_interval: settings.check_interval_hours
-                }));
-            })
-            .catch(err => console.error('Failed to load update settings:', err));
-
-        // 获取真实的开机自启状态
-        invoke<boolean>('is_auto_launch_enabled')
-            .then(enabled => {
-                setFormData(prev => ({ ...prev, auto_launch: enabled }));
-            })
-            .catch(err => console.error('Failed to get auto launch status:', err));
     }, [loadConfig]);
 
     useEffect(() => {
@@ -299,68 +291,6 @@ function Settings() {
                                 </select>
                                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{t('settings.general.auto_launch_desc')}</p>
                             </div>
-
-                            {/* 自动检查更新 */}
-                            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-base-200 rounded-lg border border-gray-100 dark:border-base-300">
-                                <div>
-                                    <div className="font-medium text-gray-900 dark:text-base-content">自动检查更新</div>
-                                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">启动时自动检查新版本</p>
-                                </div>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        className="sr-only peer"
-                                        checked={formData.auto_check_update ?? true}
-                                        onChange={async (e) => {
-                                            const enabled = e.target.checked;
-                                            try {
-                                                await invoke('save_update_settings', {
-                                                    settings: {
-                                                        auto_check: enabled,
-                                                        last_check_time: 0,
-                                                        check_interval_hours: formData.update_check_interval ?? 24
-                                                    }
-                                                });
-                                                setFormData({ ...formData, auto_check_update: enabled });
-                                                showToast(enabled ? '已启用自动检查更新' : '已禁用自动检查更新', 'success');
-                                            } catch (error) {
-                                                showToast(`${t('common.error')}: ${error}`, 'error');
-                                            }
-                                        }}
-                                    />
-                                    <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                                </label>
-                            </div>
-
-                            {/* 检查间隔 */}
-                            {formData.auto_check_update && (
-                                <div className="ml-4">
-                                    <label className="block text-sm font-medium text-gray-900 dark:text-base-content mb-2">检查间隔（小时）</label>
-                                    <input
-                                        type="number"
-                                        className="w-32 px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
-                                        min="1"
-                                        max="168"
-                                        value={formData.update_check_interval ?? 24}
-                                        onChange={(e) => setFormData({ ...formData, update_check_interval: parseInt(e.target.value) })}
-                                        onBlur={async () => {
-                                            try {
-                                                await invoke('save_update_settings', {
-                                                    settings: {
-                                                        auto_check: formData.auto_check_update ?? true,
-                                                        last_check_time: 0,
-                                                        check_interval_hours: formData.update_check_interval ?? 24
-                                                    }
-                                                });
-                                                showToast('已保存检查间隔设置', 'success');
-                                            } catch (error) {
-                                                showToast(`${t('common.error')}: ${error}`, 'error');
-                                            }
-                                        }}
-                                    />
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">设置自动检查更新的时间间隔（1-168 小时）</p>
-                                </div>
-                            )}
                         </div>
                     )}
 
@@ -432,6 +362,176 @@ function Settings() {
                                     />
                                 </div>
                             )}
+
+                            {/* 智能高峰期预热调度器 */}
+                            <div className="mt-6 pt-6 border-t border-gray-200 dark:border-base-300">
+                                <h3 className="text-md font-semibold text-gray-900 dark:text-base-content mb-4 flex items-center gap-2">
+                                    <Sparkles className="w-5 h-5 text-amber-500" />
+                                    {t('settings.account.scheduled_warmup.title')}
+                                </h3>
+
+                                {/* 启用开关 */}
+                                <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-base-200 rounded-lg border border-gray-100 dark:border-base-300 mb-4">
+                                    <div>
+                                        <div className="font-medium text-gray-900 dark:text-base-content">{t('settings.account.scheduled_warmup.enable')}</div>
+                                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{t('settings.account.scheduled_warmup.enable_desc')}</p>
+                                    </div>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="sr-only peer"
+                                            checked={formData.scheduled_warmup?.enabled || false}
+                                            onChange={(e) => {
+                                                const defaultSchedules = {
+                                                    'default': [
+                                                        { start: '10:00', end: '10:00', enabled: true },
+                                                        { start: '15:00', end: '15:00', enabled: true },
+                                                        { start: '21:00', end: '21:00', enabled: true }
+                                                    ]
+                                                };
+                                                const existingSchedules = formData.scheduled_warmup?.schedules;
+                                                const hasExistingSchedules = existingSchedules &&
+                                                    existingSchedules['default'] &&
+                                                    existingSchedules['default'].length > 0 &&
+                                                    existingSchedules['default'].some(s => s.start);
+                                                setFormData({
+                                                    ...formData,
+                                                    scheduled_warmup: {
+                                                        ...formData.scheduled_warmup,
+                                                        enabled: e.target.checked,
+                                                        schedules: hasExistingSchedules ? existingSchedules : defaultSchedules
+                                                    }
+                                                });
+                                            }}
+                                        />
+                                        <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                                    </label>
+                                </div>
+
+                                {/* 时间点配置 */}
+                                {formData.scheduled_warmup?.enabled && (
+                                    <div className="ml-4 space-y-4">
+                                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                                            {t('settings.account.scheduled_warmup.schedule_desc')}
+                                        </p>
+
+                                        {/* 3个时间点输入 */}
+                                        <div className="space-y-3">
+                                            {[0, 1, 2].map((idx) => {
+                                                // 获取当前时间点 (使用schedules的第一天作为通用配置)
+                                                const times = formData.scheduled_warmup?.schedules?.['default'] || [];
+                                                const currentTimeRange = times[idx];
+                                                const currentTime = currentTimeRange?.start || '';
+                                                const isTimeEnabled = currentTimeRange?.enabled !== false; // 默认为 true
+
+                                                // 计算预热触发时间（高峰时间前5小时）
+                                                const getWarmupTime = (peakTime: string) => {
+                                                    if (!peakTime) return '--:--';
+                                                    const [h, m] = peakTime.split(':').map(Number);
+                                                    let warmupHour = h - 5;
+                                                    if (warmupHour < 0) warmupHour += 24;
+                                                    return `${warmupHour.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                                                };
+
+                                                // 更新时间点配置（带验证）
+                                                const updateTimePoint = (updates: { start?: string; enabled?: boolean }) => {
+                                                    const newTimes = [...(formData.scheduled_warmup?.schedules?.['default'] || [
+                                                        { start: '10:00', end: '10:00', enabled: true },
+                                                        { start: '15:00', end: '15:00', enabled: true },
+                                                        { start: '21:00', end: '21:00', enabled: true }
+                                                    ])];
+
+                                                    // 如果是更新时间，验证间隔
+                                                    if (updates.start !== undefined) {
+                                                        const newTimeStr = updates.start;
+                                                        const [newH, newM] = newTimeStr.split(':').map(Number);
+                                                        const newMinutes = newH * 60 + newM;
+
+                                                        // 检查与其他启用的时间点的间隔
+                                                        for (let i = 0; i < newTimes.length; i++) {
+                                                            if (i === idx) continue; // 跳过自己
+                                                            const other = newTimes[i];
+                                                            if (!other?.start || other.enabled === false) continue;
+
+                                                            const [otherH, otherM] = other.start.split(':').map(Number);
+                                                            const otherMinutes = otherH * 60 + otherM;
+
+                                                            // 计算间隔（考虑跨日）
+                                                            let diff = Math.abs(newMinutes - otherMinutes);
+                                                            if (diff > 720) diff = 1440 - diff; // 跨日情况取较短间隔
+
+                                                            const minInterval = 5 * 60; // 5小时 = 300分钟
+                                                            if (diff < minInterval) {
+                                                                showToast(t('settings.account.scheduled_warmup.interval_error'), 'error');
+                                                                return; // 不更新
+                                                            }
+                                                        }
+                                                    }
+
+                                                    newTimes[idx] = {
+                                                        ...newTimes[idx],
+                                                        start: updates.start ?? newTimes[idx]?.start ?? '',
+                                                        end: updates.start ?? newTimes[idx]?.end ?? '',
+                                                        enabled: updates.enabled ?? newTimes[idx]?.enabled ?? true
+                                                    };
+                                                    setFormData({
+                                                        ...formData,
+                                                        scheduled_warmup: {
+                                                            enabled: true,
+                                                            schedules: { 'default': newTimes }
+                                                        }
+                                                    });
+                                                };
+
+                                                return (
+                                                    <div key={idx} className={`flex items-center gap-4 p-3 rounded-lg transition-all ${isTimeEnabled ? 'bg-gray-50 dark:bg-base-200' : 'bg-gray-100/50 dark:bg-base-300/50 opacity-60'}`}>
+                                                        {/* 独立开关 */}
+                                                        <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                                            <input
+                                                                type="checkbox"
+                                                                className="sr-only peer"
+                                                                checked={isTimeEnabled}
+                                                                onChange={(e) => updateTimePoint({ enabled: e.target.checked })}
+                                                            />
+                                                            <div className="w-9 h-5 bg-gray-200 dark:bg-base-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                        </label>
+                                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 w-20">
+                                                            {t('settings.account.scheduled_warmup.peak_time')} {idx + 1}
+                                                        </span>
+                                                        <input
+                                                            type="time"
+                                                            className={`px-3 py-2 border border-gray-300 dark:border-base-300 rounded-lg bg-white dark:bg-base-100 text-sm ${!isTimeEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                            value={currentTime}
+                                                            disabled={!isTimeEnabled}
+                                                            onChange={(e) => updateTimePoint({ start: e.target.value })}
+                                                        />
+                                                        {currentTime && isTimeEnabled && (
+                                                            <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                                                ⚡ {t('settings.account.scheduled_warmup.warmup_at')} <strong>{getWarmupTime(currentTime)}</strong> {t('settings.account.scheduled_warmup.warmup_suffix')}
+                                                            </span>
+                                                        )}
+                                                        {(!currentTime || !isTimeEnabled) && (
+                                                            <span className="text-xs text-gray-400">
+                                                                {!isTimeEnabled ? t('common.disabled') : t('settings.account.scheduled_warmup.not_set')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800/50">
+                                            <p className="text-xs text-amber-700 dark:text-amber-400">
+                                                ⚠️ {t('settings.account.scheduled_warmup.quota_hint')}
+                                            </p>
+                                        </div>
+
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                            💡 {t('settings.account.scheduled_warmup.hint')}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -569,7 +669,7 @@ function Settings() {
                                     <p className="text-sm text-gray-600 dark:text-gray-400">{t('settings.advanced.logs_desc')}</p>
                                 </div>
                                 <div className="badge badge-primary badge-outline gap-2 font-mono">
-                                    v3.3.21
+                                    v3.3.22
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <button
@@ -651,6 +751,8 @@ function Settings() {
                                     </div>
                                 </div>
                             </div>
+
+
                         </div>
                     )}
                     {activeTab === 'about' && (

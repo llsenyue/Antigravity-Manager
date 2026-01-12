@@ -756,15 +756,75 @@ pub async fn warm_up_account(account_id: &str) -> Result<String, String> {
     let email = account.email.clone();
     let token = access_token.clone();
     let pid = project_id.clone();
+    let total_count = warmed_count;
 
     tokio::spawn(async move {
-        for (model_name, pct) in models_to_warm {
-            // 直接调用 Google API，不经过本地代理
-            warmup_model_directly(&token, &model_name, &pid, &email, pct).await;
+        const MAX_RETRY: usize = 3;
+        const RETRY_DELAY_SECS: u64 = 5;
 
-            // 请求间隔
-            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+        let mut success_count = 0;
+
+        // 初始化待预热列表
+        let mut current_items: Vec<(String, i32)> = models_to_warm;
+        let mut retry_round = 0;
+
+        while !current_items.is_empty() && retry_round <= MAX_RETRY {
+            if retry_round > 0 {
+                tracing::info!(
+                    "[Warmup] === 单账号重试第 {}/{} 轮：{} 个失败模型 ===",
+                    retry_round,
+                    MAX_RETRY,
+                    current_items.len()
+                );
+                // 重试前等待
+                tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY_SECS)).await;
+            }
+
+            let mut failed_items: Vec<(String, i32)> = Vec::new();
+            let round_total = current_items.len();
+
+            for (idx, (model_name, pct)) in current_items.into_iter().enumerate() {
+                tracing::info!(
+                    "[Warmup] 执行 {}/{} (轮次 {}): {} / {}",
+                    idx + 1,
+                    round_total,
+                    retry_round,
+                    email,
+                    model_name
+                );
+
+                let result = warmup_model_directly(&token, &model_name, &pid, &email, pct).await;
+
+                if result {
+                    success_count += 1;
+                    tracing::info!("[Warmup] ✓ {} / {} 成功", email, model_name);
+                } else {
+                    tracing::warn!("[Warmup] ✗ {} / {} 失败，将在下一轮重试", email, model_name);
+                    // 保存失败项以便重试
+                    failed_items.push((model_name, pct));
+                }
+
+                // 每个请求间隔 300ms
+                if idx < round_total - 1 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+                }
+            }
+
+            // 更新当前待处理列表
+            current_items = failed_items;
+            retry_round += 1;
         }
+
+        // 统计最终失败数
+        let final_fail_count = current_items.len();
+
+        tracing::info!(
+            "[Warmup] ========== 单账号预热完成 ==========\\n  成功: {}\\n  失败: {}\\n  总计: {}\\n  重试轮次: {}",
+            success_count,
+            final_fail_count,
+            total_count,
+            retry_round.saturating_sub(1)
+        );
 
         // [FIX] 预热完成后立即刷新配额
         tracing::info!("[Warmup] 正在刷新账号配额...");

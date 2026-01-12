@@ -1,4 +1,3 @@
-import { useTranslation } from 'react-i18next';
 import { Account } from '../../types/account';
 import AccountCard from './AccountCard';
 
@@ -6,12 +5,13 @@ interface AccountGridProps {
     accounts: Account[];
     selectedIds: Set<string>;
     refreshingIds: Set<string>;
+    warmingIds?: Set<string>;
     onToggleSelect: (id: string) => void;
     currentAccountId: string | null;
     switchingAccountId: string | null;
     onSwitch: (accountId: string) => void;
     onRefresh: (accountId: string) => void;
-    onViewDevice: (accountId: string) => void;
+    onWarmUp?: (accountId: string) => void;
     onViewDetails: (accountId: string) => void;
     onExport: (accountId: string) => void;
     onDelete: (accountId: string) => void;
@@ -19,13 +19,12 @@ interface AccountGridProps {
 }
 
 
-function AccountGrid({ accounts, selectedIds, refreshingIds, onToggleSelect, currentAccountId, switchingAccountId, onSwitch, onRefresh, onViewDetails, onExport, onDelete, onToggleProxy, onViewDevice }: AccountGridProps) {
-    const { t } = useTranslation();
+function AccountGrid({ accounts, selectedIds, refreshingIds, warmingIds: _warmingIds, onToggleSelect, currentAccountId, switchingAccountId, onSwitch, onRefresh, onWarmUp: _onWarmUp, onViewDetails, onExport, onDelete, onToggleProxy }: AccountGridProps) {
     if (accounts.length === 0) {
         return (
             <div className="bg-white dark:bg-base-100 rounded-2xl p-12 shadow-sm border border-gray-100 dark:border-base-200 text-center">
-                <p className="text-gray-400 mb-2">{t('accounts.empty.title')}</p>
-                <p className="text-sm text-gray-400">{t('accounts.empty.desc')}</p>
+                <p className="text-gray-400 mb-2">暂无账号</p>
+                <p className="text-sm text-gray-400">点击上方"添加账号"按钮添加第一个账号</p>
             </div>
         );
     }
@@ -43,7 +42,6 @@ function AccountGrid({ accounts, selectedIds, refreshingIds, onToggleSelect, cur
                     isSwitching={account.id === switchingAccountId}
                     onSwitch={() => onSwitch(account.id)}
                     onRefresh={() => onRefresh(account.id)}
-                    onViewDevice={() => onViewDevice(account.id)}
                     onViewDetails={() => onViewDetails(account.id)}
                     onExport={() => onExport(account.id)}
                     onDelete={() => onDelete(account.id)}
