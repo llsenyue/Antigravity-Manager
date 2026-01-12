@@ -8,6 +8,7 @@ import { useConfigStore } from '../stores/useConfigStore';
 import AccountTable from '../components/accounts/AccountTable';
 import AccountGrid from '../components/accounts/AccountGrid';
 import AccountDetailsDialog from '../components/accounts/AccountDetailsDialog';
+import DeviceFingerprintDialog from '../components/accounts/DeviceFingerprintDialog';
 import AddAccountDialog from '../components/accounts/AddAccountDialog';
 import ModalDialog from '../components/common/ModalDialog';
 import Pagination from '../components/common/Pagination';
@@ -52,6 +53,7 @@ function Accounts() {
     }, [viewMode]);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [detailsAccount, setDetailsAccount] = useState<Account | null>(null);
+    const [deviceAccount, setDeviceAccount] = useState<Account | null>(null);
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [isBatchDelete, setIsBatchDelete] = useState(false);
     const [toggleProxyConfirm, setToggleProxyConfirm] = useState<{ accountId: string; enable: boolean } | null>(null);
@@ -506,6 +508,13 @@ function Accounts() {
         }
     };
 
+    const handleViewDevice = (accountId: string) => {
+        const account = accounts.find(a => a.id === accountId);
+        if (account) {
+            setDeviceAccount(account);
+        }
+    };
+
     return (
         <div className="h-full flex flex-col p-5 gap-4 max-w-7xl mx-auto w-full">
             {/* 测试按钮 - 在最顶部 */}
@@ -726,6 +735,7 @@ function Accounts() {
                                 onSwitch={handleSwitch}
                                 onRefresh={handleRefresh}
                                 onWarmUp={handleWarmUp}
+                                onViewDevice={handleViewDevice}
                                 onViewDetails={handleViewDetails}
                                 onExport={handleExportOne}
                                 onDelete={handleDelete}
@@ -779,6 +789,11 @@ function Accounts() {
             <AccountDetailsDialog
                 account={detailsAccount}
                 onClose={() => setDetailsAccount(null)}
+            />
+
+            <DeviceFingerprintDialog
+                account={deviceAccount}
+                onClose={() => setDeviceAccount(null)}
             />
 
             <ModalDialog

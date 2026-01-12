@@ -112,6 +112,7 @@
         "last_used": "最后使用",
         "reset_time": "重置时间",
         "switch_to": "切换到此账号",
+        "device_fingerprint": "设备指纹",
         "actions": "操作",
         "details": {
             "title": "配额详情"

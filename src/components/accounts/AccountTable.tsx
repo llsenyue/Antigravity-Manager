@@ -38,6 +38,7 @@ import {
     ToggleLeft,
     ToggleRight,
     Flame,
+    Fingerprint,
 } from 'lucide-react';
 import { Account } from '../../types/account';
 import { useTranslation } from 'react-i18next';
@@ -60,6 +61,7 @@ interface AccountTableProps {
     onSwitch: (accountId: string) => void;
     onRefresh: (accountId: string) => void;
     onWarmUp?: (accountId: string) => void;
+    onViewDevice?: (accountId: string) => void;
     onViewDetails: (accountId: string) => void;
     onExport: (accountId: string) => void;
     onDelete: (accountId: string) => void;
@@ -80,6 +82,7 @@ interface SortableRowProps {
     onSwitch: () => void;
     onRefresh: () => void;
     onWarmUp?: () => void;
+    onViewDevice?: () => void;
     onViewDetails: () => void;
     onExport: () => void;
     onDelete: () => void;
@@ -95,6 +98,7 @@ interface AccountRowContentProps {
     onSwitch: () => void;
     onRefresh: () => void;
     onWarmUp?: () => void;
+    onViewDevice?: () => void;
     onViewDetails: () => void;
     onExport: () => void;
     onDelete: () => void;
@@ -150,6 +154,7 @@ function SortableAccountRow({
     onSwitch,
     onRefresh,
     onWarmUp,
+    onViewDevice,
     onViewDetails,
     onExport,
     onDelete,
@@ -213,6 +218,7 @@ function SortableAccountRow({
                 onSwitch={onSwitch}
                 onRefresh={onRefresh}
                 onWarmUp={onWarmUp}
+                onViewDevice={onViewDevice}
                 onViewDetails={onViewDetails}
                 onExport={onExport}
                 onDelete={onDelete}
@@ -235,6 +241,7 @@ function AccountRowContent({
     onSwitch,
     onRefresh,
     onWarmUp,
+    onViewDevice,
     onViewDetails,
     onExport,
     onDelete,
@@ -484,6 +491,15 @@ function AccountRowContent({
                     >
                         <Info className="w-3.5 h-3.5" />
                     </button>
+                    {onViewDevice && (
+                        <button
+                            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
+                            onClick={(e) => { e.stopPropagation(); onViewDevice(); }}
+                            title={t('accounts.device_fingerprint')}
+                        >
+                            <Fingerprint className="w-3.5 h-3.5" />
+                        </button>
+                    )}
                     <button
                         className={`p-1.5 text-gray-500 dark:text-gray-400 rounded-lg transition-all ${(isSwitching || isDisabled) ? 'bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 cursor-not-allowed' : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'}`}
                         onClick={(e) => { e.stopPropagation(); onSwitch(); }}
@@ -566,6 +582,7 @@ function AccountTable({
     onSwitch,
     onRefresh,
     onWarmUp,
+    onViewDevice,
     onViewDetails,
     onExport,
     onDelete,
@@ -659,6 +676,7 @@ function AccountTable({
                                     onSwitch={() => onSwitch(account.id)}
                                     onRefresh={() => onRefresh(account.id)}
                                     onWarmUp={onWarmUp ? () => onWarmUp(account.id) : undefined}
+                                    onViewDevice={onViewDevice ? () => onViewDevice(account.id) : undefined}
                                     onViewDetails={() => onViewDetails(account.id)}
                                     onExport={() => onExport(account.id)}
                                     onDelete={() => onDelete(account.id)}
