@@ -18,6 +18,7 @@ pub enum RateLimitReason {
 }
 
 /// 限流信息
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RateLimitInfo {
     /// 限流重置时间
@@ -151,6 +152,7 @@ impl RateLimitTracker {
         status: u16,
         retry_after_header: Option<&str>,
         body: &str,
+        model: Option<String>,
     ) -> Option<RateLimitInfo> {
         // 支持 429 (限流) 以及 500/503/529 (后端故障软避让)
         if status != 429 && status != 500 && status != 503 && status != 529 {
@@ -247,7 +249,7 @@ impl RateLimitTracker {
             retry_after_sec: retry_sec,
             detected_at: SystemTime::now(),
             reason,
-            model: None,  // 默认账号级别限流
+            model,
         };
         
         // 存储
@@ -546,7 +548,7 @@ mod tests {
     #[test]
     fn test_get_remaining_wait() {
         let tracker = RateLimitTracker::new();
-        tracker.parse_from_error("acc1", 429, Some("30"), "");
+        tracker.parse_from_error("acc1", 429, Some("30"), "", None);
         let wait = tracker.get_remaining_wait("acc1");
         assert!(wait > 25 && wait <= 30);
     }
@@ -555,7 +557,7 @@ mod tests {
     fn test_safety_buffer() {
         let tracker = RateLimitTracker::new();
         // 如果 API 返回 1s，我们强制设为 2s
-        tracker.parse_from_error("acc1", 429, Some("1"), "");
+        tracker.parse_from_error("acc1", 429, Some("1"), "", None);
         let wait = tracker.get_remaining_wait("acc1");
         // Due to time passing, it might be 1 or 2
         assert!(wait >= 1 && wait <= 2);

@@ -72,6 +72,8 @@ export interface AppConfig {
     antigravity_executable?: string; // [NEW] 手动指定的反重力程序路径
     antigravity_args?: string[]; // [NEW] Antigravity 启动参数
     auto_launch?: boolean; // 开机自动启动
+    auto_check_update?: boolean; // 自动检查更新
+    update_check_interval?: number; // 更新检查间隔（小时）
     accounts_page_size?: number; // 账号列表每页显示数量,默认 0 表示自动计算
     proxy: ProxyConfig;
     scheduled_warmup?: ScheduledWarmupConfig;

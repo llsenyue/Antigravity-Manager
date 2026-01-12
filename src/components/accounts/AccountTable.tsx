@@ -28,6 +28,7 @@ import {
     RefreshCw,
     Trash2,
     Download,
+    Fingerprint,
     Info,
     Lock,
     Ban,
@@ -37,7 +38,6 @@ import {
     Clock,
     ToggleLeft,
     ToggleRight,
-    Flame,
 } from 'lucide-react';
 import { Account } from '../../types/account';
 import { useTranslation } from 'react-i18next';
@@ -52,14 +52,13 @@ interface AccountTableProps {
     accounts: Account[];
     selectedIds: Set<string>;
     refreshingIds: Set<string>;
-    warmingIds?: Set<string>;
     onToggleSelect: (id: string) => void;
     onToggleAll: () => void;
     currentAccountId: string | null;
     switchingAccountId: string | null;
     onSwitch: (accountId: string) => void;
     onRefresh: (accountId: string) => void;
-    onWarmUp?: (accountId: string) => void;
+    onViewDevice: (accountId: string) => void;
     onViewDetails: (accountId: string) => void;
     onExport: (accountId: string) => void;
     onDelete: (accountId: string) => void;
@@ -72,14 +71,13 @@ interface SortableRowProps {
     account: Account;
     selected: boolean;
     isRefreshing: boolean;
-    isWarming?: boolean;
     isCurrent: boolean;
     isSwitching: boolean;
     isDragging?: boolean;
     onSelect: () => void;
     onSwitch: () => void;
     onRefresh: () => void;
-    onWarmUp?: () => void;
+    onViewDevice: () => void;
     onViewDetails: () => void;
     onExport: () => void;
     onDelete: () => void;
@@ -90,11 +88,10 @@ interface AccountRowContentProps {
     account: Account;
     isCurrent: boolean;
     isRefreshing: boolean;
-    isWarming?: boolean;
     isSwitching: boolean;
     onSwitch: () => void;
     onRefresh: () => void;
-    onWarmUp?: () => void;
+    onViewDevice: () => void;
     onViewDetails: () => void;
     onExport: () => void;
     onDelete: () => void;
@@ -142,14 +139,13 @@ function SortableAccountRow({
     account,
     selected,
     isRefreshing,
-    isWarming,
     isCurrent,
     isSwitching,
     isDragging,
     onSelect,
     onSwitch,
     onRefresh,
-    onWarmUp,
+    onViewDevice,
     onViewDetails,
     onExport,
     onDelete,
@@ -208,11 +204,10 @@ function SortableAccountRow({
                 account={account}
                 isCurrent={isCurrent}
                 isRefreshing={isRefreshing}
-                isWarming={isWarming}
                 isSwitching={isSwitching}
                 onSwitch={onSwitch}
                 onRefresh={onRefresh}
-                onWarmUp={onWarmUp}
+                onViewDevice={onViewDevice}
                 onViewDetails={onViewDetails}
                 onExport={onExport}
                 onDelete={onDelete}
@@ -230,11 +225,10 @@ function AccountRowContent({
     account,
     isCurrent,
     isRefreshing,
-    isWarming,
     isSwitching,
     onSwitch,
     onRefresh,
-    onWarmUp,
+    onViewDevice,
     onViewDetails,
     onExport,
     onDelete,
@@ -352,12 +346,11 @@ function AccountRowContent({
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[44px] text-right font-bold transition-colors",
+                                <span className={cn("w-[36px] text-right font-bold transition-colors",
                                     getQuotaColor(geminiProModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiProModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                )} title={geminiProModel && geminiProModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
+                                )}>
                                     {geminiProModel ? `${geminiProModel.percentage}%` : '-'}
-                                    {geminiProModel && geminiProModel.percentage < 100 && <span className="text-blue-400 ml-0.5">*</span>}
                                 </span>
                             </div>
                         </div>
@@ -382,12 +375,11 @@ function AccountRowContent({
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[44px] text-right font-bold transition-colors",
+                                <span className={cn("w-[36px] text-right font-bold transition-colors",
                                     getQuotaColor(geminiFlashModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiFlashModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                )} title={geminiFlashModel && geminiFlashModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
+                                )}>
                                     {geminiFlashModel ? `${geminiFlashModel.percentage}%` : '-'}
-                                    {geminiFlashModel && geminiFlashModel.percentage < 100 && <span className="text-blue-400 ml-0.5">*</span>}
                                 </span>
                             </div>
                         </div>
@@ -412,12 +404,11 @@ function AccountRowContent({
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[44px] text-right font-bold transition-colors",
+                                <span className={cn("w-[36px] text-right font-bold transition-colors",
                                     getQuotaColor(geminiImageModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(geminiImageModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                )} title={geminiImageModel && geminiImageModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
+                                )}>
                                     {geminiImageModel ? `${geminiImageModel.percentage}%` : '-'}
-                                    {geminiImageModel && geminiImageModel.percentage < 100 && <span className="text-blue-400 ml-0.5">*</span>}
                                 </span>
                             </div>
                         </div>
@@ -442,12 +433,11 @@ function AccountRowContent({
                                         <span className="text-gray-300 dark:text-gray-600 italic scale-90">N/A</span>
                                     )}
                                 </div>
-                                <span className={cn("w-[44px] text-right font-bold transition-colors",
+                                <span className={cn("w-[36px] text-right font-bold transition-colors",
                                     getQuotaColor(claudeModel?.percentage || 0) === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
                                         getQuotaColor(claudeModel?.percentage || 0) === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'
-                                )} title={claudeModel && claudeModel.percentage < 100 ? "冷却中，需要预热" : undefined}>
+                                )}>
                                     {claudeModel ? `${claudeModel.percentage}%` : '-'}
-                                    {claudeModel && claudeModel.percentage < 100 && <span className="text-blue-400 ml-0.5">*</span>}
                                 </span>
                             </div>
                         </div>
@@ -485,6 +475,13 @@ function AccountRowContent({
                         <Info className="w-3.5 h-3.5" />
                     </button>
                     <button
+                        className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
+                        onClick={(e) => { e.stopPropagation(); onViewDevice(); }}
+                        title="设备指纹"
+                    >
+                        <Fingerprint className="w-3.5 h-3.5" />
+                    </button>
+                    <button
                         className={`p-1.5 text-gray-500 dark:text-gray-400 rounded-lg transition-all ${(isSwitching || isDisabled) ? 'bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 cursor-not-allowed' : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'}`}
                         onClick={(e) => { e.stopPropagation(); onSwitch(); }}
                         title={isDisabled ? t('accounts.disabled_tooltip') : (isSwitching ? t('common.loading') : t('accounts.switch_to'))}
@@ -500,16 +497,6 @@ function AccountRowContent({
                     >
                         <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
                     </button>
-                    {onWarmUp && (
-                        <button
-                            className={`p-1.5 text-gray-500 dark:text-gray-400 rounded-lg transition-all ${(isWarming || isDisabled) ? 'bg-amber-50 dark:bg-amber-900/10 text-amber-600 dark:text-amber-400 cursor-not-allowed' : 'hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30'}`}
-                            onClick={(e) => { e.stopPropagation(); onWarmUp(); }}
-                            title={isDisabled ? t('accounts.disabled_tooltip') : (isWarming ? t('common.loading') : t('accounts.warm_up'))}
-                            disabled={isWarming || isDisabled}
-                        >
-                            <Flame className={`w-3.5 h-3.5 ${isWarming ? 'animate-pulse' : ''}`} />
-                        </button>
-                    )}
                     <button
                         className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all"
                         onClick={(e) => { e.stopPropagation(); onExport(); }}
@@ -558,14 +545,13 @@ function AccountTable({
     accounts,
     selectedIds,
     refreshingIds,
-    warmingIds,
     onToggleSelect,
     onToggleAll,
     currentAccountId,
     switchingAccountId,
     onSwitch,
     onRefresh,
-    onWarmUp,
+    onViewDevice,
     onViewDetails,
     onExport,
     onDelete,
@@ -651,14 +637,13 @@ function AccountTable({
                                     account={account}
                                     selected={selectedIds.has(account.id)}
                                     isRefreshing={refreshingIds.has(account.id)}
-                                    isWarming={warmingIds?.has(account.id)}
                                     isCurrent={account.id === currentAccountId}
                                     isSwitching={account.id === switchingAccountId}
                                     isDragging={account.id === activeId}
                                     onSelect={() => onToggleSelect(account.id)}
                                     onSwitch={() => onSwitch(account.id)}
                                     onRefresh={() => onRefresh(account.id)}
-                                    onWarmUp={onWarmUp ? () => onWarmUp(account.id) : undefined}
+                                    onViewDevice={() => onViewDevice(account.id)}
                                     onViewDetails={() => onViewDetails(account.id)}
                                     onExport={() => onExport(account.id)}
                                     onDelete={() => onDelete(account.id)}
@@ -696,6 +681,7 @@ function AccountTable({
                                     isSwitching={activeAccount.id === switchingAccountId}
                                     onSwitch={() => { }}
                                     onRefresh={() => { }}
+                                    onViewDevice={() => { }}
                                     onViewDetails={() => { }}
                                     onExport={() => { }}
                                     onDelete={() => { }}

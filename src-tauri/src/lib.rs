@@ -94,6 +94,17 @@ pub fn run() {
             commands::delete_accounts,
             commands::reorder_accounts,
             commands::switch_account,
+            // 设备指纹
+            commands::get_device_profiles,
+            commands::bind_device_profile,
+            commands::bind_device_profile_with_profile,
+            commands::preview_generate_profile,
+            commands::apply_device_profile,
+            commands::restore_original_device,
+            commands::list_device_versions,
+            commands::restore_device_version,
+            commands::delete_device_version,
+            commands::open_device_folder,
             commands::get_current_account,
             // 配额命令
             commands::fetch_account_quota,
@@ -120,6 +131,10 @@ pub fn run() {
             commands::get_antigravity_path,
             commands::get_antigravity_args,
             commands::check_for_updates,
+            commands::get_update_settings,
+            commands::save_update_settings,
+            commands::should_check_updates,
+            commands::update_last_check_time,
             commands::toggle_proxy_status,
             // 反代服务命令
             commands::proxy::start_proxy_service,

@@ -1,6 +1,7 @@
 pub mod account;
 pub mod config;
 pub mod db;
+pub mod device;
 pub mod i18n;
 pub mod logger;
 pub mod migration;
@@ -10,8 +11,8 @@ pub mod process;
 pub mod proxy_db;
 pub mod quota;
 pub mod scheduler;
-
 pub mod tray;
+pub mod update_checker;
 
 use crate::models;
 
@@ -22,6 +23,7 @@ pub use config::*;
 pub use logger::*;
 #[allow(unused_imports)]
 pub use quota::*;
+// pub use device::*;
 
 pub async fn fetch_quota(
     access_token: &str,

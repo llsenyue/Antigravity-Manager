@@ -4,6 +4,7 @@ use tracing::info;
 #[derive(Debug, Default)]
 pub struct ConversationState {
     pub in_tool_loop: bool,
+    #[allow(dead_code)]
     pub interrupted_tool: bool,
     pub last_assistant_idx: Option<usize>,
 }
@@ -30,6 +31,7 @@ pub fn analyze_conversation_state(messages: &[Message]) -> ConversationState {
            if let MessageContent::Array(blocks) = &last_msg.content {
                if blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. })) {
                    state.in_tool_loop = true;
+                   tracing::debug!("[Thinking-Recovery] Detected ToolResult at the end of conversation.");
                }
            }
         }
@@ -92,13 +94,13 @@ pub fn close_tool_loop_for_thinking(messages: &mut Vec<Message>) {
         messages.push(Message {
             role: "assistant".to_string(),
             content: MessageContent::Array(vec![
-                ContentBlock::Text { text: "[Tool execution completed. Please proceed.]".to_string() }
+                ContentBlock::Text { text: "[System: Tool loop recovered. Previous tool execution accepted.]".to_string() }
             ])
         });
         messages.push(Message {
             role: "user".to_string(),
             content: MessageContent::Array(vec![
-                ContentBlock::Text { text: "Proceed.".to_string() }
+                ContentBlock::Text { text: "Please continue with the next step.".to_string() }
             ])
         });
     }

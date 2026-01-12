@@ -54,6 +54,7 @@ pub async fn handle_chat_completions(
     let max_attempts = pool_size.max(1);
 
     let mut last_error = String::new();
+    let mut last_email: Option<String> = None;
 
     for attempt in 0..max_attempts {
         // 2. 模型路由解析
@@ -90,6 +91,7 @@ pub async fn handle_chat_completions(
             }
         };
 
+        last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);
 
         // 4. 转换请求
@@ -264,7 +266,7 @@ pub async fn handle_chat_completions(
                     attempt + 1,
                     max_attempts
                 );
-                return Err((status, error_text));
+                return Ok((status, [("X-Account-Email", email.as_str())], error_text).into_response());
             }
 
             // 3. 其他限流或服务器过载情况，轮换账号
@@ -295,14 +297,22 @@ pub async fn handle_chat_completions(
             "OpenAI Upstream non-retryable error {} on account {}: {}",
             status_code, email, error_text
         );
-        return Err((status, error_text));
+        return Ok((status, [("X-Account-Email", email.as_str())], error_text).into_response());
     }
 
     // 所有尝试均失败
-    Err((
-        StatusCode::TOO_MANY_REQUESTS,
-        format!("All accounts exhausted. Last error: {}", last_error),
-    ))
+    if let Some(email) = last_email {
+        Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            [("X-Account-Email", email)],
+            format!("All accounts exhausted. Last error: {}", last_error),
+        ).into_response())
+    } else {
+        Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            format!("All accounts exhausted. Last error: {}", last_error),
+        ).into_response())
+    }
 }
 
 /// 处理 Legacy Completions API (/v1/completions)

@@ -267,21 +267,36 @@ impl TokenManager {
 
                 // 1. 检查会话是否已绑定账号
                 if let Some(bound_id) = self.session_accounts.get(sid).map(|v| v.clone()) {
-                    // 2. 检查绑定的账号是否限流 (使用精准的剩余时间接口)
-                    let reset_sec = self.rate_limit_tracker.get_remaining_wait(&bound_id);
-                    if reset_sec > 0 {
-                        // 【修复 Issue #284】立即解绑并切换账号，不再阻塞等待
-                        // 原因：阻塞等待会导致并发请求时客户端 socket 超时 (UND_ERR_SOCKET)
-                        tracing::warn!("Session {} bound account {} is rate-limited ({}s remaining). Unbinding and switching to next available account.", sid, bound_id, reset_sec);
-                        self.session_accounts.remove(sid);
-                    } else if !attempted.contains(&bound_id) {
-                        // 3. 账号可用且未被标记为尝试失败，优先复用
-                        if let Some(found) =
-                            tokens_snapshot.iter().find(|t| t.account_id == bound_id)
-                        {
-                            tracing::debug!("Sticky Session: Successfully reusing bound account {} for session {}", found.email, sid);
-                            target_token = Some(found.clone());
+                    // 【修复】先通过 account_id 找到对应的账号，获取其 email
+                    // 因为限流记录是以 email 为 key 存储的
+                    if let Some(bound_token) =
+                        tokens_snapshot.iter().find(|t| t.account_id == bound_id)
+                    {
+                        // 2. 使用 email 检查绑定的账号是否限流
+                        let reset_sec = self
+                            .rate_limit_tracker
+                            .get_remaining_wait(&bound_token.email);
+                        if reset_sec > 0 {
+                            // 【修复 Issue #284】立即解绑并切换账号，不再阻塞等待
+                            // 原因：阻塞等待会导致并发请求时客户端 socket 超时 (UND_ERR_SOCKET)
+                            tracing::warn!(
+                                "Session {} bound account {} is rate-limited ({}s remaining). Unbinding and switching to next available account.", 
+                                sid, bound_token.email, reset_sec
+                            );
+                            self.session_accounts.remove(sid);
+                        } else if !attempted.contains(&bound_id) {
+                            // 3. 账号可用且未被标记为尝试失败，优先复用
+                            tracing::debug!("Sticky Session: Successfully reusing bound account {} for session {}", bound_token.email, sid);
+                            target_token = Some(bound_token.clone());
                         }
+                    } else {
+                        // 绑定的账号已不存在（可能被删除），解绑
+                        tracing::warn!(
+                            "Session {} bound to non-existent account {}, unbinding.",
+                            sid,
+                            bound_id
+                        );
+                        self.session_accounts.remove(sid);
                     }
                 }
             }
@@ -294,11 +309,19 @@ impl TokenManager {
                         if let Some(found) =
                             tokens_snapshot.iter().find(|t| &t.account_id == account_id)
                         {
-                            tracing::debug!(
-                                "60s Window: Force reusing last account: {}",
-                                found.email
-                            );
-                            target_token = Some(found.clone());
+                            // 【修复】检查限流状态，避免复用已被锁定的账号
+                            if !self.is_rate_limited(&found.email) {
+                                tracing::debug!(
+                                    "60s Window: Force reusing last account: {}",
+                                    found.email
+                                );
+                                target_token = Some(found.clone());
+                            } else {
+                                tracing::debug!(
+                                    "60s Window: Last account {} is rate-limited, skipping",
+                                    found.email
+                                );
+                            }
                         }
                     }
                 }
@@ -556,83 +579,6 @@ impl TokenManager {
         Err(last_error.unwrap_or_else(|| "All accounts failed".to_string()))
     }
 
-    /// 通过 email 获取指定账号的 Token（用于预热等需要指定账号的场景）
-    /// 此方法会自动刷新过期的 token
-    pub async fn get_token_by_email(
-        &self,
-        email: &str,
-    ) -> Result<(String, String, String), String> {
-        // 先在迭代中收集需要的信息，避免死锁
-        let token_info: Option<(String, String, String, i64, i64, i64, Option<String>)> = {
-            let mut found = None;
-            for entry in self.tokens.iter() {
-                let token = entry.value();
-                if token.email == email {
-                    found = Some((
-                        token.account_id.clone(),
-                        token.access_token.clone(),
-                        token.refresh_token.clone(),
-                        token.timestamp,
-                        token.expires_in,
-                        chrono::Utc::now().timestamp(),
-                        token.project_id.clone(),
-                    ));
-                    break;
-                }
-            }
-            found
-        }; // 迭代器在这里释放
-
-        let (
-            account_id,
-            current_access_token,
-            refresh_token,
-            timestamp,
-            expires_in,
-            now,
-            project_id_opt,
-        ) = match token_info {
-            Some(info) => info,
-            None => return Err(format!("未找到账号: {}", email)),
-        };
-
-        let project_id = project_id_opt.unwrap_or_else(|| "bamboo-precept-lgxtn".to_string());
-        let expires_at = timestamp / 1000 + expires_in; // timestamp 是 ms
-
-        // Token 未过期，直接返回
-        if now < expires_at - 300 {
-            return Ok((current_access_token, project_id, email.to_string()));
-        }
-
-        // Token 即将过期，尝试刷新（此时已经释放了迭代器的读锁）
-        tracing::info!("[Warmup] Token for {} is expiring, refreshing...", email);
-
-        match crate::modules::oauth::refresh_access_token(&refresh_token).await {
-            Ok(token_response) => {
-                tracing::info!("[Warmup] Token refresh successful for {}", email);
-
-                // 现在可以安全获取写锁更新缓存
-                let new_timestamp = chrono::Utc::now().timestamp_millis();
-                if let Some(mut entry) = self.tokens.get_mut(&account_id) {
-                    entry.access_token = token_response.access_token.clone();
-                    entry.expires_in = token_response.expires_in;
-                    entry.timestamp = new_timestamp;
-                }
-
-                // 保存到磁盘
-                let _ = self
-                    .save_refreshed_token(&account_id, &token_response)
-                    .await;
-
-                Ok((token_response.access_token, project_id, email.to_string()))
-            }
-            Err(e) => Err(format!(
-                "[Warmup] Token refresh failed for {}: {}",
-                email, e
-            )),
-        }
-    }
-
     async fn disable_account(&self, account_id: &str, reason: &str) -> Result<(), String> {
         let path = if let Some(entry) = self.tokens.get(account_id) {
             entry.account_path.clone()
@@ -714,6 +660,83 @@ impl TokenManager {
         self.tokens.len()
     }
 
+    /// 通过 email 获取指定账号的 Token（用于预热等需要指定账号的场景）
+    /// 此方法会自动刷新过期的 token
+    pub async fn get_token_by_email(
+        &self,
+        email: &str,
+    ) -> Result<(String, String, String), String> {
+        // 先在迭代中收集需要的信息，避免死锁
+        let token_info: Option<(String, String, String, i64, i64, i64, Option<String>)> = {
+            let mut found = None;
+            for entry in self.tokens.iter() {
+                let token = entry.value();
+                if token.email == email {
+                    found = Some((
+                        token.account_id.clone(),
+                        token.access_token.clone(),
+                        token.refresh_token.clone(),
+                        token.timestamp,
+                        token.expires_in,
+                        chrono::Utc::now().timestamp(),
+                        token.project_id.clone(),
+                    ));
+                    break;
+                }
+            }
+            found
+        }; // 迭代器在这里释放
+
+        let (
+            account_id,
+            current_access_token,
+            refresh_token,
+            timestamp,
+            expires_in,
+            now,
+            project_id_opt,
+        ) = match token_info {
+            Some(info) => info,
+            None => return Err(format!("未找到账号: {}", email)),
+        };
+
+        let project_id = project_id_opt.unwrap_or_else(|| "bamboo-precept-lgxtn".to_string());
+        let expires_at = timestamp / 1000 + expires_in; // timestamp 是 ms
+
+        // Token 未过期，直接返回
+        if now < expires_at - 300 {
+            return Ok((current_access_token, project_id, email.to_string()));
+        }
+
+        // Token 即将过期，尝试刷新（此时已经释放了迭代器的读锁）
+        tracing::info!("[Warmup] Token for {} is expiring, refreshing...", email);
+
+        match crate::modules::oauth::refresh_access_token(&refresh_token).await {
+            Ok(token_response) => {
+                tracing::info!("[Warmup] Token refresh successful for {}", email);
+
+                // 现在可以安全获取写锁更新缓存
+                let new_timestamp = chrono::Utc::now().timestamp_millis();
+                if let Some(mut entry) = self.tokens.get_mut(&account_id) {
+                    entry.access_token = token_response.access_token.clone();
+                    entry.expires_in = token_response.expires_in;
+                    entry.timestamp = new_timestamp;
+                }
+
+                // 保存到磁盘
+                let _ = self
+                    .save_refreshed_token(&account_id, &token_response)
+                    .await;
+
+                Ok((token_response.access_token, project_id, email.to_string()))
+            }
+            Err(e) => Err(format!(
+                "[Warmup] Token refresh failed for {}: {}",
+                email, e
+            )),
+        }
+    }
+
     // ===== 限流管理方法 =====
 
     /// 标记账号限流(从外部调用,通常在 handler 中)
@@ -729,6 +752,7 @@ impl TokenManager {
             status,
             retry_after_header,
             error_body,
+            None,
         );
     }
 
@@ -949,6 +973,7 @@ impl TokenManager {
                 status,
                 retry_after_header,
                 error_body,
+                model.map(|s| s.to_string()),
             );
             return;
         }
@@ -999,6 +1024,7 @@ impl TokenManager {
             status,
             retry_after_header,
             error_body,
+            model.map(|s| s.to_string()),
         );
     }
 

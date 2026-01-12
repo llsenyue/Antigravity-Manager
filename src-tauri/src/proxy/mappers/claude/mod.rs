@@ -212,6 +212,7 @@ pub fn emit_force_stop(state: &mut StreamingState) -> Vec<Bytes> {
 }
 
 /// Process grounding metadata from Gemini's googleSearch and emit as Claude web_search blocks
+#[allow(dead_code)]
 fn process_grounding_metadata(
     metadata: &serde_json::Value,
     state: &mut StreamingState,

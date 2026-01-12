@@ -7,11 +7,13 @@ import Settings from './pages/Settings';
 import ApiProxy from './pages/ApiProxy';
 import Monitor from './pages/Monitor';
 import ThemeManager from './components/common/ThemeManager';
-import { useEffect } from 'react';
+import { UpdateNotification } from './components/UpdateNotification';
+import { useEffect, useState } from 'react';
 import { useConfigStore } from './stores/useConfigStore';
 import { useAccountStore } from './stores/useAccountStore';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 
 
 const router = createBrowserRouter([
@@ -91,9 +93,35 @@ function App() {
     };
   }, [fetchCurrentAccount, fetchAccounts]);
 
+  // Update notification state
+  const [showUpdateNotification, setShowUpdateNotification] = useState(false);
+
+  // Check for updates on startup
+  useEffect(() => {
+    const checkUpdates = async () => {
+      try {
+        const shouldCheck = await invoke<boolean>('should_check_updates');
+        if (shouldCheck) {
+          setShowUpdateNotification(true);
+          // 更新最后检查时间，防止下次启动立即弹出
+          await invoke('update_last_check_time');
+        }
+      } catch (error) {
+        console.error('Failed to check update settings:', error);
+      }
+    };
+
+    // Delay check to avoid blocking initial render
+    const timer = setTimeout(checkUpdates, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <>
       <ThemeManager />
+      {showUpdateNotification && (
+        <UpdateNotification onClose={() => setShowUpdateNotification(false)} />
+      )}
       <RouterProvider router={router} />
     </>
   );

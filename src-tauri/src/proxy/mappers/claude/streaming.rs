@@ -152,7 +152,9 @@ pub struct StreamingState {
     pub web_search_query: Option<String>,
     pub grounding_chunks: Option<Vec<serde_json::Value>>,
     // [IMPROVED] Error recovery 状态追踪
+    #[allow(dead_code)]
     parse_error_count: usize,
+    #[allow(dead_code)]
     last_valid_state: Option<BlockType>,
     // [NEW] Model tracking for signature cache
     pub model_name: Option<String>,
@@ -454,6 +456,7 @@ impl StreamingState {
     /// 1. 安全关闭当前 block
     /// 2. 递增错误计数器
     /// 3. 在 debug 模式下输出错误信息
+    #[allow(dead_code)]
     pub fn handle_parse_error(&mut self, raw_data: &str) -> Vec<Bytes> {
         let mut chunks = Vec::new();
 
@@ -504,12 +507,14 @@ impl StreamingState {
     }
 
     /// 重置错误状态 (recovery 后调用)
+    #[allow(dead_code)]
     pub fn reset_error_state(&mut self) {
         self.parse_error_count = 0;
         self.last_valid_state = None;
     }
 
     /// 获取错误计数 (用于监控)
+    #[allow(dead_code)]
     pub fn get_error_count(&self) -> usize {
         self.parse_error_count
     }
@@ -528,7 +533,23 @@ impl<'a> PartProcessor<'a> {
     /// 处理单个 part
     pub fn process(&mut self, part: &GeminiPart) -> Vec<Bytes> {
         let mut chunks = Vec::new();
-        let signature = part.thought_signature.clone();
+        // [FIX #545] Decode Base64 signature if present (Gemini sends Base64, Claude expects Raw)
+        let signature = part.thought_signature.as_ref().map(|sig| {
+             // Try to decode as base64
+             use base64::Engine;
+             match base64::engine::general_purpose::STANDARD.decode(sig) {
+                 Ok(decoded_bytes) => {
+                     match String::from_utf8(decoded_bytes) {
+                         Ok(decoded_str) => {
+                             tracing::debug!("[Streaming] Decoded base64 signature (len {} -> {})", sig.len(), decoded_str.len());
+                             decoded_str
+                         },
+                         Err(_) => sig.clone() // Not valid UTF-8, keep as is
+                     }
+                 },
+                 Err(_) => sig.clone() // Not base64, keep as is
+             }
+        });
 
         // 1. FunctionCall 处理
         if let Some(fc) = &part.function_call {

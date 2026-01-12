@@ -7,6 +7,7 @@ import { useAccountStore } from '../stores/useAccountStore';
 import { useConfigStore } from '../stores/useConfigStore';
 import AccountTable from '../components/accounts/AccountTable';
 import AccountGrid from '../components/accounts/AccountGrid';
+import DeviceFingerprintDialog from '../components/accounts/DeviceFingerprintDialog';
 import AccountDetailsDialog from '../components/accounts/AccountDetailsDialog';
 import AddAccountDialog from '../components/accounts/AddAccountDialog';
 import ModalDialog from '../components/common/ModalDialog';
@@ -34,8 +35,6 @@ function Accounts() {
         refreshQuota,
         toggleProxyStatus,
         reorderAccounts,
-        warmUpAccounts,
-        warmUpAccount,
     } = useAccountStore();
     const { config } = useConfigStore();
 
@@ -51,6 +50,7 @@ function Accounts() {
         localStorage.setItem('accounts_view_mode', viewMode);
     }, [viewMode]);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [deviceAccount, setDeviceAccount] = useState<Account | null>(null);
     const [detailsAccount, setDetailsAccount] = useState<Account | null>(null);
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [isBatchDelete, setIsBatchDelete] = useState(false);
@@ -247,34 +247,6 @@ function Accounts() {
         }
     };
 
-    const [warmingIds, setWarmingIds] = useState<Set<string>>(new Set());
-
-    const handleWarmUp = async (accountId: string) => {
-        setWarmingIds(prev => {
-            const next = new Set(prev);
-            next.add(accountId);
-            return next;
-        });
-        try {
-            const message = await warmUpAccount(accountId);
-            // Show the actual backend message (e.g., "已启动 X 个模型的预热任务" or "所有模型已在冷却周期中，无需预热")
-            showToast(message, 'success');
-            // Auto-refresh after warmup to show updated status
-            setTimeout(async () => {
-                await refreshQuota(accountId);
-            }, 3000);
-        } catch (error) {
-            showToast(`${t('common.error')}: ${error}`, 'error');
-        } finally {
-            setWarmingIds(prev => {
-                const next = new Set(prev);
-                next.delete(accountId);
-                return next;
-            });
-        }
-    };
-
-
     const handleBatchDelete = () => {
         if (selectedIds.size === 0) return;
         setIsBatchDelete(true);
@@ -362,28 +334,9 @@ function Accounts() {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
     const [isRefreshConfirmOpen, setIsRefreshConfirmOpen] = useState(false);
-    const [isWarmupConfirmOpen, setIsWarmupConfirmOpen] = useState(false);
-    const [isWarming, setIsWarming] = useState(false);
 
     const handleRefreshClick = () => {
         setIsRefreshConfirmOpen(true);
-    };
-
-    const handleWarmupClick = () => {
-        setIsWarmupConfirmOpen(true);
-    };
-
-    const executeWarmup = async () => {
-        setIsWarmupConfirmOpen(false);
-        setIsWarming(true);
-        try {
-            await warmUpAccounts();
-            showToast(t('accounts.warmup_started'), 'success');
-        } catch (error) {
-            showToast(`${t('common.error')}: ${error}`, 'error');
-        } finally {
-            setIsWarming(false);
-        }
     };
 
     const executeRefresh = async () => {
@@ -505,6 +458,13 @@ function Accounts() {
             setDetailsAccount(account);
         }
     };
+    const handleViewDevice = (accountId: string) => {
+        const account = accounts.find(a => a.id === accountId);
+        if (account) {
+            setDeviceAccount(account);
+        }
+    };
+
 
     return (
         <div className="h-full flex flex-col p-5 gap-4 max-w-7xl mx-auto w-full">
@@ -685,18 +645,6 @@ function Accounts() {
                     </button>
 
                     <button
-                        className={`px-2.5 py-2 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 transition-colors flex items-center gap-1.5 shadow-sm ${isWarming ? 'opacity-70 cursor-not-allowed' : ''}`}
-                        onClick={handleWarmupClick}
-                        disabled={isWarming}
-                        title={t('accounts.warm_up_desc')}
-                    >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isWarming ? 'animate-spin' : ''}`} />
-                        <span className="hidden xl:inline">
-                            {isWarming ? t('common.loading') : t('accounts.warm_up')}
-                        </span>
-                    </button>
-
-                    <button
                         className="px-2.5 py-2 border border-gray-200 dark:border-base-300 text-gray-700 dark:text-gray-300 text-xs font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-1.5"
                         onClick={handleExport}
                         title={selectedIds.size > 0 ? t('accounts.export_selected', { count: selectedIds.size }) : t('common.export')}
@@ -718,14 +666,13 @@ function Accounts() {
                                 accounts={paginatedAccounts}
                                 selectedIds={selectedIds}
                                 refreshingIds={refreshingIds}
-                                warmingIds={warmingIds}
                                 onToggleSelect={handleToggleSelect}
                                 onToggleAll={handleToggleAll}
                                 currentAccountId={currentAccount?.id || null}
                                 switchingAccountId={switchingAccountId}
                                 onSwitch={handleSwitch}
                                 onRefresh={handleRefresh}
-                                onWarmUp={handleWarmUp}
+                                onViewDevice={handleViewDevice}
                                 onViewDetails={handleViewDetails}
                                 onExport={handleExportOne}
                                 onDelete={handleDelete}
@@ -740,13 +687,12 @@ function Accounts() {
                             accounts={paginatedAccounts}
                             selectedIds={selectedIds}
                             refreshingIds={refreshingIds}
-                            warmingIds={warmingIds}
                             onToggleSelect={handleToggleSelect}
                             currentAccountId={currentAccount?.id || null}
                             switchingAccountId={switchingAccountId}
                             onSwitch={handleSwitch}
                             onRefresh={handleRefresh}
-                            onWarmUp={handleWarmUp}
+                            onViewDevice={handleViewDevice}
                             onViewDetails={handleViewDetails}
                             onExport={handleExportOne}
                             onDelete={handleDelete}
@@ -780,6 +726,10 @@ function Accounts() {
                 account={detailsAccount}
                 onClose={() => setDetailsAccount(null)}
             />
+            <DeviceFingerprintDialog
+                account={deviceAccount}
+                onClose={() => setDeviceAccount(null)}
+            />
 
             <ModalDialog
                 isOpen={!!deleteConfirmId || isBatchDelete}
@@ -807,17 +757,6 @@ function Accounts() {
                 isDestructive={false}
                 onConfirm={executeRefresh}
                 onCancel={() => setIsRefreshConfirmOpen(false)}
-            />
-
-            <ModalDialog
-                isOpen={isWarmupConfirmOpen}
-                title={t('accounts.dialog.warmup_title')}
-                message={t('accounts.dialog.warmup_msg')}
-                type="confirm"
-                confirmText={t('accounts.warm_up')}
-                isDestructive={false}
-                onConfirm={executeWarmup}
-                onCancel={() => setIsWarmupConfirmOpen(false)}
             />
 
             {toggleProxyConfirm && (
