@@ -1,7 +1,7 @@
 use crate::models::{Account, AppConfig, QuotaData, TokenData};
 use crate::modules;
-use tauri_plugin_opener::OpenerExt;
 use tauri::{Emitter, Manager};
+use tauri_plugin_opener::OpenerExt;
 
 // 导出 proxy 命令
 pub mod proxy;
@@ -96,7 +96,10 @@ pub async fn delete_accounts(
 /// 根据传入的账号ID数组顺序更新账号排列
 #[tauri::command]
 pub async fn reorder_accounts(account_ids: Vec<String>) -> Result<(), String> {
-    modules::logger::log_info(&format!("收到账号重排序请求，共 {} 个账号", account_ids.len()));
+    modules::logger::log_info(&format!(
+        "收到账号重排序请求，共 {} 个账号",
+        account_ids.len()
+    ));
     modules::account::reorder_accounts(&account_ids).map_err(|e| {
         modules::logger::log_error(&format!("账号重排序失败: {}", e));
         e
@@ -180,6 +183,10 @@ pub async fn fetch_account_quota(
         let _ = instance.token_manager.reload_account(&account_id).await;
     }
 
+    // [REMOVED] 联动预热已移除，预热仅通过以下入口触发:
+    // 1. 即时/高峰模式 (scheduler 10分钟扫描)
+    // 2. 一键手动预热按钮
+
     Ok(quota)
 }
 
@@ -197,6 +204,10 @@ pub async fn refresh_all_quotas(
     if let Some(instance) = instance_lock.as_ref() {
         let _ = instance.token_manager.reload_all_accounts().await;
     }
+
+    // [REMOVED] 联动预热已移除，预热仅通过以下入口触发:
+    // 1. 即时/高峰模式 (scheduler 10分钟扫描)
+    // 2. 一键手动预热按钮
 
     Ok(stats)
 }
@@ -282,7 +293,6 @@ pub async fn open_device_folder(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| format!("打开目录失败: {}", e))
 }
 
-
 /// 加载配置
 #[tauri::command]
 pub async fn load_config() -> Result<AppConfig, String> {
@@ -316,7 +326,10 @@ pub async fn save_config(
         // 更新 z.ai 配置
         instance.axum_server.update_zai(&config.proxy).await;
         // 更新实验性配置
-        instance.axum_server.update_experimental(&config.proxy).await;
+        instance
+            .axum_server
+            .update_experimental(&config.proxy)
+            .await;
         tracing::debug!("已同步热更新反代服务配置");
     }
 
@@ -653,7 +666,9 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
 #[tauri::command]
 pub async fn should_check_updates() -> Result<bool, String> {
     let settings = crate::modules::update_checker::load_update_settings()?;
-    Ok(crate::modules::update_checker::should_check_for_updates(&settings))
+    Ok(crate::modules::update_checker::should_check_for_updates(
+        &settings,
+    ))
 }
 
 #[tauri::command]
@@ -661,10 +676,10 @@ pub async fn update_last_check_time() -> Result<(), String> {
     crate::modules::update_checker::update_last_check_time()
 }
 
-
 /// 获取更新设置
 #[tauri::command]
-pub async fn get_update_settings() -> Result<crate::modules::update_checker::UpdateSettings, String> {
+pub async fn get_update_settings() -> Result<crate::modules::update_checker::UpdateSettings, String>
+{
     crate::modules::update_checker::load_update_settings()
 }
 
@@ -675,8 +690,6 @@ pub async fn save_update_settings(
 ) -> Result<(), String> {
     crate::modules::update_checker::save_update_settings(&settings)
 }
-
-
 
 /// 切换账号的反代禁用状态
 #[tauri::command]
@@ -695,17 +708,19 @@ pub async fn toggle_proxy_status(
 
     // 1. 读取账号文件
     let data_dir = modules::account::get_data_dir()?;
-    let account_path = data_dir.join("accounts").join(format!("{}.json", account_id));
+    let account_path = data_dir
+        .join("accounts")
+        .join(format!("{}.json", account_id));
 
     if !account_path.exists() {
         return Err(format!("账号文件不存在: {}", account_id));
     }
 
-    let content = std::fs::read_to_string(&account_path)
-        .map_err(|e| format!("读取账号文件失败: {}", e))?;
+    let content =
+        std::fs::read_to_string(&account_path).map_err(|e| format!("读取账号文件失败: {}", e))?;
 
-    let mut account_json: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("解析账号文件失败: {}", e))?;
+    let mut account_json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("解析账号文件失败: {}", e))?;
 
     // 2. 更新 proxy_disabled 字段
     if enable {
@@ -718,14 +733,16 @@ pub async fn toggle_proxy_status(
         let now = chrono::Utc::now().timestamp();
         account_json["proxy_disabled"] = serde_json::Value::Bool(true);
         account_json["proxy_disabled_at"] = serde_json::Value::Number(now.into());
-        account_json["proxy_disabled_reason"] = serde_json::Value::String(
-            reason.unwrap_or_else(|| "用户手动禁用".to_string())
-        );
+        account_json["proxy_disabled_reason"] =
+            serde_json::Value::String(reason.unwrap_or_else(|| "用户手动禁用".to_string()));
     }
 
     // 3. 保存到磁盘
-    std::fs::write(&account_path, serde_json::to_string_pretty(&account_json).unwrap())
-        .map_err(|e| format!("写入账号文件失败: {}", e))?;
+    std::fs::write(
+        &account_path,
+        serde_json::to_string_pretty(&account_json).unwrap(),
+    )
+    .map_err(|e| format!("写入账号文件失败: {}", e))?;
 
     modules::logger::log_info(&format!(
         "账号反代状态已更新: {} ({})",

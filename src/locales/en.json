@@ -253,7 +253,18 @@
         },
         "warmup": {
             "title": "Smart Warmup",
-            "desc": "Automatically monitors all models and triggers warmup immediately when quota reaches 100%, keeping models warm"
+            "desc": "Automatically monitors all models and triggers warmup immediately when quota reaches 100%, keeping models warm",
+            "mode_label": "Warmup Mode",
+            "mode_immediate": "Immediate",
+            "mode_immediate_desc": "Warmup at 100%",
+            "mode_peak": "Peak-Based",
+            "mode_peak_desc": "5 hours before peak",
+            "peak_hours_label": "Peak Hours",
+            "peak_hours_desc": "System will automatically warmup 5 hours before each peak hour to ensure quota availability",
+            "trigger_at": "warmup",
+            "add_peak_hour": "Add Peak Hour",
+            "monitored_models_label": "Monitored Models (Trigger Condition)",
+            "monitored_models_desc": "Select at least one model. Warmup triggers when any selected model reaches 100% quota"
         },
         "quota_protection": {
             "title": "Quota Protection",

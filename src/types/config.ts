@@ -53,7 +53,9 @@ export interface ZaiConfig {
 
 export interface ScheduledWarmupConfig {
     enabled: boolean;
+    warmup_mode: 'immediate' | 'peak_based';  // [NEW] 预热模式
     monitored_models: string[];
+    peak_hours: string[];  // [NEW] 高峰期时间列表, 格式 "HH:MM"
 }
 
 export interface QuotaProtectionConfig {

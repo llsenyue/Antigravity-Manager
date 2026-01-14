@@ -253,7 +253,18 @@
         },
         "warmup": {
             "title": "智能预热",
-            "desc": "自动监控所有模型，当额度恢复到 100% 时立即触发预热，保持模型热状态"
+            "desc": "自动监控所有模型，当额度恢复到 100% 时立即触发预热，保持模型热状态",
+            "mode_label": "预热模式",
+            "mode_immediate": "即时预热",
+            "mode_immediate_desc": "100% 即预热",
+            "mode_peak": "高峰期预热",
+            "mode_peak_desc": "高峰期前5小时",
+            "peak_hours_label": "高峰期时间",
+            "peak_hours_desc": "系统会在高峰期前 5 小时自动预热，确保高峰期有充足配额",
+            "trigger_at": "预热",
+            "add_peak_hour": "添加高峰期",
+            "monitored_models_label": "监控模型（触发条件）",
+            "monitored_models_desc": "至少选择一个核心模型，任一选中模型配额恢复到 100% 时触发预热"
         },
         "quota_protection": {
             "title": "配额保护",

@@ -82,6 +82,15 @@ function App() {
       })
     );
 
+    // [FIX] 监听预热完成后的配额更新事件
+    unlistenPromises.push(
+      listen('quota-updated', () => {
+        console.log('[App] Quota updated after warmup, refreshing accounts...');
+        fetchCurrentAccount();
+        fetchAccounts();
+      })
+    );
+
     // Cleanup
     return () => {
       Promise.all(unlistenPromises).then(unlisteners => {

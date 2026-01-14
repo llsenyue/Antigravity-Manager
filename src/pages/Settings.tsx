@@ -37,7 +37,9 @@ function Settings() {
         },
         scheduled_warmup: {
             enabled: false,
-            monitored_models: []
+            warmup_mode: 'peak_based' as const,
+            monitored_models: [],
+            peak_hours: ['10:00', '15:00', '20:00']
         },
         quota_protection: {
             enabled: false,
